@@ -103,7 +103,7 @@ def data_url(path):
 def gridded_url(path):
     """Close-up with a labeled grid, so the model can name cells instead of guessing coordinates."""
     import io
-    from PIL import Image, ImageDraw
+    from PIL import Image, ImageDraw, ImageFont
     image = Image.open(path).convert('RGB')
     width, height = image.size
     columns, rows = len(GRID_COLUMNS), GRID_ROWS
@@ -112,11 +112,13 @@ def gridded_url(path):
         draw.line([(width * index / columns, 0), (width * index / columns, height)], fill=(255, 0, 255), width=2)
     for index in range(1, rows):
         draw.line([(0, height * index / rows), (width, height * index / rows)], fill=(255, 0, 255), width=2)
+    size = max(12, width // 60)
+    font = ImageFont.load_default(size=size)
     for row in range(rows):
         for column in range(columns):
             x, y = width * column / columns + 3, height * row / rows + 3
-            draw.rectangle([x, y, x + 16, y + 12], fill=(255, 0, 255))
-            draw.text((x + 2, y), f'{GRID_COLUMNS[column]}{row + 1}', fill=(255, 255, 255))
+            draw.rectangle([x, y, x + size * 1.6, y + size * 1.2], fill=(255, 0, 255))
+            draw.text((x + 3, y), f'{GRID_COLUMNS[column]}{row + 1}', fill=(255, 255, 255), font=font)
     buffer = io.BytesIO()
     image.save(buffer, 'JPEG', quality=85)
     return 'data:image/jpeg;base64,' + base64.b64encode(buffer.getvalue()).decode('ascii')
@@ -195,6 +197,14 @@ def cells_to_frame(cells):
                        (max(columns) + 1) / count, (max(rows) + 1) / GRID_ROWS], 0.5)
 
 
+def box_at_cursor(box, pointer, margin=0.02):
+    """A box that misses the pointed spot contradicts the cursor; drop it."""
+    if box is None or pointer is None:
+        return box
+    inside = box[0] - margin <= pointer['x'] <= box[2] + margin and box[1] - margin <= pointer['y'] <= box[3] + margin
+    return box if inside else None
+
+
 def choose_moment(found, view_id, pointer, visual):
     """Timestamp of the frame to show: while the cursor rests on the pointed spot, else when the item is spoken."""
     if pointer:
@@ -224,7 +234,7 @@ def resolve(result, found, visual):
         cursor_source = 'tracked' if cursor else None
     return {'view_id': view_id, 'timestamp_s': moment, 'pointer_id': pointer['id'] if pointer else None,
             'cursor_norm': cursor, 'cursor_source': cursor_source,
-            'bbox': cells_to_frame(result.get('cells')) or clean_bbox(result.get('bbox'), 0.5),
+            'bbox': box_at_cursor(cells_to_frame(result.get('cells')) or clean_bbox(result.get('bbox'), 0.5), pointer),
             'confidence': result['confidence'], 'rationale': str(result.get('rationale') or '')[:500]}
 
 

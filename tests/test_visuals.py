@@ -315,14 +315,18 @@ def test_grid_cells_mapped_to_frame():
     found = {'views': ['V01'], 'pointers': [{'x': 0.5, 'y': 0.5, 'crop': [0.36, 0.3, 0.28, 0.4], 'id': 'P001',
                                              'view_id': 'V01', 'start_s': 1.0, 'end_s': 3.0}],
              'speech_start': 2.0, 'start': 0.0, 'end': 5.0}
-    result = {'view_id': 'V01', 'pointer_id': 'P001', 'cells': ['A1'], 'bbox': [0.1, 0.1, 0.2, 0.2],
+    result = {'view_id': 'V01', 'pointer_id': 'P001', 'cells': ['D3', 'E3'], 'bbox': None,
               'confidence': 'high', 'rationale': 'x'}
     visual = {'timeline': [[0.0, 'V01']], 'track': []}
-    assert grounding.resolve(result, found, visual)['bbox'] == [0.0, 0.0, 0.125, 0.1667]
-    result['cells'] = None
-    assert grounding.resolve(result, found, visual)['bbox'] == [0.1, 0.1, 0.2, 0.2]
+    assert grounding.resolve(result, found, visual)['bbox'] == [0.375, 0.3333, 0.625, 0.5]
+    result['cells'] = ['A1']
+    assert grounding.resolve(result, found, visual)['bbox'] is None
+    result['cells'], result['bbox'] = None, [0.4, 0.4, 0.6, 0.6]
+    assert grounding.resolve(result, found, visual)['bbox'] == [0.4, 0.4, 0.6, 0.6]
     result['bbox'] = [0.1, 0.1, 0.9, 0.9]
     assert grounding.resolve(result, found, visual)['bbox'] is None
+    result['pointer_id'], result['cells'] = None, ['A1']
+    assert grounding.resolve(result, found, visual)['bbox'] == [0.0, 0.0, 0.125, 0.1667]
 
 
 def test_gridded_closeup_is_a_jpeg(tmp_path):

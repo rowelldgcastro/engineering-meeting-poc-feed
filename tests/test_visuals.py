@@ -333,3 +333,13 @@ def test_gridded_closeup_is_a_jpeg(tmp_path):
     from PIL import Image
     Image.new('RGB', (512, 365), 'white').save(tmp_path / 'p.jpg')
     assert grounding.gridded_url(tmp_path / 'p.jpg').startswith('data:image/jpeg;base64,/9j/')
+
+
+def test_close_up_crops_to_box_and_cursor(tmp_path):
+    import io
+    from PIL import Image
+    Image.new('RGB', (1000, 600), 'white').save(tmp_path / 'f.jpg')
+    visual = {'bbox': [0.4, 0.4, 0.6, 0.6], 'cursor_norm': [0.5, 0.5]}
+    with Image.open(io.BytesIO(visuals.close_up(tmp_path / 'f.jpg', visual))) as crop:
+        assert 250 < crop.width < 350 and crop.height < 600
+    assert visuals.close_up(tmp_path / 'f.jpg', {'bbox': None, 'cursor_norm': [0.5, 0.5]}) is None

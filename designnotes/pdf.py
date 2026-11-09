@@ -7,7 +7,7 @@ from fpdf import FPDF
 from designnotes.extraction import SECTIONS
 from designnotes.report import CONTEXT_HEADINGS, gap_label, NOT_DISCUSSED, item_detail_lines, item_title, references, render_markdown
 from designnotes.transcript import source_label
-from designnotes.visuals import annotate, caption
+from designnotes.visuals import annotate, caption, close_up
 
 REPLACEMENTS = {'\u2018': "'", '\u2019': "'", '\u201c': '"', '\u201d': '"', '\u2013': '-', '\u2014': '-',
                 '\u2212': '-', '\u2026': '...', '\u00b7': '-', '\u2022': '-', '\u2264': '<=', '\u2265': '>=',
@@ -73,13 +73,23 @@ def render_pdf(record, visual_dir=None):
             from PIL import Image
             with Image.open(path) as picture:
                 aspect = picture.height / picture.width
-            image_width = min(120, width - 4, 150 / aspect)
+            image_width = min(width - 4, 120 / aspect)
             height = image_width * aspect
             if pdf.get_y() + height > pdf.h - pdf.b_margin:
                 pdf.add_page()
             pdf.ln(1)
             pdf.image(io.BytesIO(annotate(path, visual)), x=pdf.l_margin + 4, w=image_width)
             para(caption(visual), 8, 'I', 80, indent=4, gap=0.3)
+            detail = close_up(path, visual)
+            if detail:
+                with Image.open(io.BytesIO(detail)) as picture:
+                    aspect = picture.height / picture.width
+                detail_width = min(width - 4, 100 / aspect, 120)
+                if pdf.get_y() + detail_width * aspect + 6 > pdf.h - pdf.b_margin:
+                    pdf.add_page()
+                pdf.ln(1)
+                pdf.image(io.BytesIO(detail), x=pdf.l_margin + 4, w=detail_width)
+                para('Close-up of the boxed area', 8, 'I', 80, indent=4, gap=0.3)
         pdf.ln(1.5)
 
     for key, letter, title, _ in SECTIONS:

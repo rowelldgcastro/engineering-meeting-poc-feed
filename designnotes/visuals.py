@@ -414,12 +414,19 @@ def annotate(path, visual):
     from PIL import Image, ImageDraw
     image = Image.open(path).convert('RGB')
     width, height = image.size
-    draw = ImageDraw.Draw(image)
     scale = max(width, height) / 1000
     if visual.get('bbox'):
         x0, y0, x1, y1 = visual['bbox']
-        draw.rectangle([x0 * width, y0 * height, x1 * width, y1 * height], outline=(240, 140, 0),
-                       width=max(2, int(3 * scale)))
+        box = [x0 * width, y0 * height, x1 * width, y1 * height]
+        overlay = Image.new('RGBA', image.size, (0, 0, 0, 0))
+        ImageDraw.Draw(overlay).rectangle(box, fill=(255, 150, 0, 45))
+        image = Image.alpha_composite(image.convert('RGBA'), overlay).convert('RGB')
+        draw = ImageDraw.Draw(image)
+        line = max(3, int(6 * scale))
+        draw.rectangle([box[0] - line, box[1] - line, box[2] + line, box[3] + line], outline=(255, 255, 255),
+                       width=max(1, line // 2))
+        draw.rectangle(box, outline=(240, 120, 0), width=line)
+    draw = ImageDraw.Draw(image)
     if visual.get('cursor_norm'):
         x, y = visual['cursor_norm'][0] * width, visual['cursor_norm'][1] * height
         radius = 16 * scale
@@ -427,6 +434,26 @@ def annotate(path, visual):
         draw.ellipse([x - radius, y - radius, x + radius, y + radius], outline=(224, 49, 43), width=max(2, int(4 * scale)))
     output = io.BytesIO()
     image.save(output, 'JPEG', quality=85)
+    return output.getvalue()
+
+
+def close_up(path, visual, margin=0.25):
+    """JPEG bytes of the annotated frame cropped to the boxed region (plus margin and the cursor), or None."""
+    import io
+    from PIL import Image
+    if not visual.get('bbox'):
+        return None
+    x0, y0, x1, y1 = visual['bbox']
+    if visual.get('cursor_norm'):
+        x0, y0 = min(x0, visual['cursor_norm'][0]), min(y0, visual['cursor_norm'][1])
+        x1, y1 = max(x1, visual['cursor_norm'][0]), max(y1, visual['cursor_norm'][1])
+    pad_x, pad_y = (x1 - x0) * margin + 0.02, (y1 - y0) * margin + 0.02
+    image = Image.open(io.BytesIO(annotate(path, visual)))
+    width, height = image.size
+    crop = image.crop((int(max(0, x0 - pad_x) * width), int(max(0, y0 - pad_y) * height),
+                       int(min(1, x1 + pad_x) * width), int(min(1, y1 + pad_y) * height)))
+    output = io.BytesIO()
+    crop.save(output, 'JPEG', quality=88)
     return output.getvalue()
 
 

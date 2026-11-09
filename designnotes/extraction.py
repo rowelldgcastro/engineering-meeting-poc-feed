@@ -19,6 +19,8 @@ import re
 MODEL = os.getenv('DESIGNNOTES_MODEL', 'gpt-4o')
 MAX_ITEMS_PER_SECTION = 60
 MAX_TEXT = 2000
+GAP_MIN_S = 20.0
+GAP_MIN_SEGMENTS = 4
 SCHEMA_VERSION = 1
 
 
@@ -28,7 +30,7 @@ class ExtractionError(ValueError):
 
 # Report structure: (key, letter, title, description). Shared with renderers and UI.
 SECTIONS = [
-    ('context', 'A', 'Engineering Context', 'Subject, design objective, technical background and participants.'),
+    ('context', 'A', 'Engineering Context', 'Subject, design objective, design presented, technical background and participants.'),
     ('decisions', 'B', 'Engineering Decisions', 'Decisions explicitly made, selected approaches, parameters and reasons.'),
     ('alternatives', 'C', 'Design Alternatives', 'Options considered, advantages, disadvantages and outcome.'),
     ('rationale', 'D', 'Engineering Rationale and Trade-offs', 'Technical reasoning, trade-offs, assumptions and constraints.'),
@@ -39,7 +41,7 @@ SECTIONS = [
 SECTION_KEYS = [key for key, *_ in SECTIONS] + ['participants']
 ID_PREFIX = {'context': 'C', 'participants': 'P', 'decisions': 'D', 'alternatives': 'A', 'rationale': 'R',
              'evidence': 'E', 'open_issues': 'O', 'lessons': 'L'}
-CONTEXT_ASPECTS = ['subject', 'objective', 'background']
+CONTEXT_ASPECTS = ['subject', 'objective', 'design', 'background']
 RATIONALE_KINDS = ['rationale', 'trade_off', 'assumption', 'constraint']
 FACTORS = ['performance', 'cost', 'manufacturability', 'reliability', 'safety', 'weight', 'schedule',
            'maintainability', 'other']
@@ -126,7 +128,12 @@ Rules:
   segments (exact characters, no paraphrase). Prefer one item per distinct fact; avoid duplicates
   across and within sections. A decision and the alternative it selected may both appear.
 - basis "stated" = explicitly said; "interpreted" = your reading (use sparingly, explain in uncertainty).
-- context: subject/component, design objective/problem, relevant technical background.
+- Cover the whole meeting. Every stretch of substantive engineering talk should be cited by at least
+  one item; do not skip explanations because they contain no decision.
+- context: subject/component, design objective/problem, design presented, relevant technical background.
+  aspect "design" = the design/configuration as presented: components, assemblies, layouts, drawings,
+  views or cross-sections walked through, how parts connect, and which dimension or feature is changing.
+  Use one item per distinct view, component group or feature explained, naming the parts exactly as spoken.
 - participants: only people who speak or are named in the transcript; role only if stated.
 - rationale: technical reasons, trade-offs (performance, cost, manufacturability, reliability...),
   assumptions and constraints that were actually discussed.
@@ -151,10 +158,14 @@ def transcript_for_prompt(segments):
     return '\n'.join(lines)
 
 
-def call_model(client, segments, title=None, project=None, model=None):
+def call_model(client, segments, title=None, project=None, model=None, focus=None):
     header = {'meeting_title': title or None, 'project_or_component': project or None}
     user = ('Metadata (user supplied, may be empty): ' + json.dumps(header) +
             '\n\nTranscript:\n' + transcript_for_prompt(segments))
+    if focus:
+        user += ('\n\nThe existing notes cite no item from these segments: ' + ', '.join(focus) +
+                 '. Extract every engineering item they support (most often context items with aspect "design"), '
+                 'citing those segment IDs. Return only new items; leave other sections empty.')
     response = client.chat.completions.create(
         model=model or MODEL, temperature=0, max_tokens=16000,
         response_format={'type': 'json_schema',
@@ -443,12 +454,46 @@ def build_notes(payload, segments, title=None, project=None):
             'stats': {'items': sum(len(v) for v in sections.values()), 'flagged': flagged, 'dropped': len(dropped)}}
 
 
+def uncovered(notes, segments):
+    """Runs of consecutive segments that no item cites and that are long enough to matter."""
+    cited = {ref for items in notes['sections'].values() for item in items for ref in item.get('source_ids', [])}
+    runs, current = [], []
+    for segment in segments + [None]:
+        if segment is not None and segment['id'] not in cited:
+            current.append(segment)
+            continue
+        if current:
+            timed = all(s.get('start_s') is not None and s.get('end_s') is not None for s in current)
+            length = sum(s['end_s'] - s['start_s'] for s in current) if timed else None
+            if (length is not None and length >= GAP_MIN_S) or (length is None and len(current) >= GAP_MIN_SEGMENTS):
+                runs.append({'source_ids': [s['id'] for s in current],
+                             'start_s': current[0].get('start_s'), 'end_s': current[-1].get('end_s')})
+        current = []
+    return runs
+
+
 def extract(client, transcript, title=None, project=None, model=None):
-    """Run LLM extraction + verification. Returns (notes, raw_response, usage)."""
+    """Run LLM extraction + verification. Returns (notes, raw_response, usage).
+
+    If parts of the meeting end up uncited, one follow-up call extracts items for just those segments.
+    """
     segments = transcript['segments']
     if not segments:
         raise ExtractionError('The transcript has no segments.')
     raw, usage = call_model(client, segments, title, project, model)
     notes = build_notes(raw, segments, title, project)
+    gaps = uncovered(notes, segments)
+    if gaps:
+        try:
+            focus = [ref for gap in gaps for ref in gap['source_ids']]
+            extra_raw, extra_usage = call_model(client, segments, title, project, model, focus=focus)
+            first, extra = json.loads(raw), json.loads(extra_raw)
+            merged = {key: first[key] + (extra.get(key) or []) for key in SECTION_KEYS}
+            notes = build_notes(merged, segments, title, project)
+            raw = json.dumps({'first_pass': first, 'gap_pass': extra})
+            usage = {'first_pass': usage, 'gap_pass': extra_usage}
+        except Exception:  # the first pass still stands; remaining gaps are reported below
+            pass
+    notes['coverage_gaps'] = uncovered(notes, segments)
     notes['model'] = model or MODEL
     return notes, raw, usage

@@ -134,6 +134,10 @@ function renderRecord() {
   if (ready) {
     const stats = r.notes.stats, flagged = countFlagged();
     if (flagged) warnings.push(flagged + ' item(s) failed an automatic check (marked "needs verification"). Check them against the source.');
+    const gaps = r.notes.coverage_gaps || [];
+    if (gaps.length) warnings.push('No notes cite these parts of the meeting: ' + gaps.map(g => g.start_s == null
+      ? g.source_ids[0] + '-' + g.source_ids[g.source_ids.length - 1]
+      : formatTime(g.start_s) + '-' + formatTime(g.end_s)).join(', ') + '. Check the transcript there.');
     if (stats.dropped) warnings.push(stats.dropped + ' extracted item(s) were discarded because no supporting transcript text was found.');
   }
   $('warnings').textContent = warnings.join('\n');
@@ -152,7 +156,7 @@ const LABELS = {trade_off: 'Trade-off', rationale: 'Rationale', assumption: 'Ass
   calculation: 'Calculation', value: 'Value', test_result: 'Test result', simulation: 'Simulation', document: 'Document',
   observation: 'Observation', question: 'Open question', investigation: 'Investigation', action: 'Action',
   selected: 'Selected', rejected: 'Rejected', undecided: 'Undecided', subject: 'Subject / component',
-  objective: 'Problem / objective', background: 'Technical background'};
+  objective: 'Problem / objective', design: 'Design presented', background: 'Technical background'};
 
 function renderNotes() {
   const container = $('notes');
@@ -166,7 +170,7 @@ function renderNotes() {
     const card = node('section', undefined, 'card section');
     card.append(node('h2', section.letter + '. ' + section.title), node('p', section.description, 'muted small desc'));
     if (section.key === 'context') {
-      ['subject', 'objective', 'background'].forEach(aspect => {
+      ['subject', 'objective', 'design', 'background'].forEach(aspect => {
         card.append(node('h3', LABELS[aspect]));
         const items = sections.context.filter(item => item.aspect === aspect);
         items.forEach(item => card.append(renderItem('context', item)));

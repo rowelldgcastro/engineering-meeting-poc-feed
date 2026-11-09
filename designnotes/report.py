@@ -7,7 +7,7 @@ from designnotes.visuals import caption
 
 NOT_DISCUSSED = 'Not discussed in transcript.'
 CONTEXT_HEADINGS = [('subject', 'Subject / component'), ('objective', 'Engineering problem / design objective'),
-                    ('background', 'Relevant technical background')]
+                    ('design', 'Design presented'), ('background', 'Relevant technical background')]
 LABELS = {'trade_off': 'Trade-off', 'rationale': 'Rationale', 'assumption': 'Assumption', 'constraint': 'Constraint',
           'calculation': 'Calculation', 'value': 'Value', 'test_result': 'Test result', 'simulation': 'Simulation',
           'document': 'Referenced document', 'observation': 'Observation', 'question': 'Open question',
@@ -120,12 +120,26 @@ def render_markdown(record, images=None):
         out += [render_item(key, item, segments_by_id, images) for item in items]
         out.append('')
 
+    gaps = notes.get('coverage_gaps') or []
+    if gaps:
+        out += ['## Parts of the meeting not covered by these notes', '']
+        out += [f'- {gap_label(gap)}' for gap in gaps]
+        out.append('')
+
     cited = list(dict.fromkeys(ref for items in sections.values() for item in items for ref in item.get('source_ids', [])))
     cited = [ref for ref in sorted(cited, key=lambda r: list(segments_by_id).index(r)) if ref in segments_by_id]
     out += ['## Appendix: Cited transcript segments', '']
     out += [f'- **[{source_label(segments_by_id[ref])}]** {segments_by_id[ref]["text"]}' for ref in cited] or ['None.']
     out.append('')
     return '\n'.join(out)
+
+
+def gap_label(gap):
+    ids = gap['source_ids']
+    span = f'{ids[0]}-{ids[-1]}' if len(ids) > 1 else ids[0]
+    if gap.get('start_s') is not None:
+        span += f' ({format_time(gap["start_s"])}-{format_time(gap["end_s"])})'
+    return span
 
 
 def render_item(section, item, segments_by_id, images=None):

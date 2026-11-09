@@ -5,7 +5,7 @@ from pathlib import Path
 from fpdf import FPDF
 
 from designnotes.extraction import SECTIONS
-from designnotes.report import CONTEXT_HEADINGS, NOT_DISCUSSED, item_detail_lines, item_title, references, render_markdown
+from designnotes.report import CONTEXT_HEADINGS, gap_label, NOT_DISCUSSED, item_detail_lines, item_title, references, render_markdown
 from designnotes.transcript import source_label
 from designnotes.visuals import annotate, caption
 
@@ -106,6 +106,13 @@ def render_pdf(record, visual_dir=None):
             item(key, entry)
         if not entries:
             para(NOT_DISCUSSED, 9, 'I', 110)
+
+    gaps = record['notes'].get('coverage_gaps') or []
+    if gaps:
+        pdf.ln(2)
+        para('Parts of the meeting not covered by these notes', 13, 'B', 25)
+        for gap in gaps:
+            para(f'- {gap_label(gap)}', 9.5)
 
     cited = list(dict.fromkeys(ref for entries in sections.values() for entry in entries for ref in entry.get('source_ids', [])))
     order = list(segments_by_id)

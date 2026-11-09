@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from designnotes.extraction import EXTRACTION_SCHEMA, ExtractionError, build_notes, extract, normalize, numbers_in, quote_in
+from designnotes.extraction import SECTION_KEYS, EXTRACTION_SCHEMA, ExtractionError, build_notes, extract, normalize, numbers_in, quote_in
 from designnotes.transcript import parse_transcript
 from tests.conftest import TRANSCRIPT, FakeClient, item, sample_payload
 
@@ -128,3 +128,37 @@ def test_helpers():
     assert not quote_in('3.5 mm', 'We use 3.2 mm.')
     assert {'1200', '0.5', '.5', '3'} <= numbers_in('1,200 rpm, 0.5 mm and three bolts')
     assert normalize('M8 × 1.25, “Grade 8.8”.') == 'm8 1.25 grade 8.8'
+
+
+def test_uncited_stretch_gets_a_gap_pass_and_remaining_gaps_are_reported():
+    from designnotes.extraction import extract
+    segments = [{'id': f'S{i:03d}', 'start_s': i * 10.0, 'end_s': i * 10.0 + 10, 'speaker': None,
+                 'text': text, 'line': None}
+                for i, text in enumerate(['We decided to use the 3.2 mm bracket.', 'This is the front cross member.',
+                                          'Here is the seat rail garnish.', 'Underneath we have the seat rail.',
+                                          'Thanks everyone.'], start=1)]
+    first = {key: [] for key in SECTION_KEYS}
+    first['decisions'] = [item(text='Use the 3.2 mm bracket', quote='decided to use the 3.2 mm bracket',
+                               source_ids=['S001'], parameters=['3.2 mm'], rationale=None)]
+    gap = {key: [] for key in SECTION_KEYS}
+    gap['context'] = [item(text='Front cross member and seat rail garnish shown', quote='seat rail garnish',
+                           source_ids=['S002', 'S003'], aspect='design')]
+    client = FakeClient()
+    answers = iter([first, gap])
+    original = client._create
+
+    def create(**kwargs):
+        client.payload = next(answers)
+        return original(**kwargs)
+    client.chat.completions.create = create
+    notes, raw, usage = extract(client, {'segments': segments})
+    assert len(client.requests) == 2 and 'S002, S003, S004, S005' in client.requests[1]['messages'][1]['content']
+    assert [i['aspect'] for i in notes['sections']['context']] == ['design']
+    assert notes['coverage_gaps'] == [{'source_ids': ['S004', 'S005'], 'start_s': 40.0, 'end_s': 60.0}]
+    assert set(json.loads(raw)) == {'first_pass', 'gap_pass'}
+
+
+def test_short_uncited_tail_is_not_a_gap(segments):
+    from designnotes.extraction import uncovered
+    notes = build_notes(sample_payload(), segments)
+    assert uncovered(notes, segments) == []

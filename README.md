@@ -85,6 +85,10 @@ schema. Every item then goes through deterministic checks before it's shown
 
 Dropped items are listed at the end of the notes, so nothing is discarded silently.
 
+Coverage: if a stretch of the meeting (20 s or more of speech) is cited by no item, a second call extracts items for
+just those segments, for example a walkthrough of a drawing under **Design presented**. Anything still uncovered is
+listed as a warning and at the end of the exports.
+
 ## Limitations
 
 - **No speaker identification for recordings.** Whisper doesn't separate speakers, so recording-based

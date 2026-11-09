@@ -42,7 +42,7 @@ Notes item (e.g. a decision):
  "flags": [{"code": "source_extended", "level": "info", "message": "…"}], "edited": false}
 ```
 
-Section-specific fields: context `aspect` (subject/objective/background); alternatives `option`,
+Section-specific fields: context `aspect` (subject/objective/design/background); alternatives `option`,
 `advantages`, `disadvantages`, `outcome` (selected/rejected/undecided), `outcome_reason`; rationale `kind`,
 `factors`; evidence `kind`; open issues `kind`, `owner`, `due`. `flags` with `level: warning` are shown as
 "needs verification".

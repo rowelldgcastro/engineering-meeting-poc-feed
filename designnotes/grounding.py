@@ -17,21 +17,23 @@ MODEL = os.getenv('DESIGNNOTES_VISION_MODEL', 'gpt-4o')
 WINDOW_S = 3.0
 MAX_POINTERS_PER_ITEM = 6
 MAX_ITEMS = 150
+GRID = 5
+GRID_COLUMNS = 'ABCDE'
+MAX_CELLS = 12
 VISUAL_SECTIONS = ('context', 'decisions', 'alternatives', 'rationale', 'evidence', 'open_issues', 'lessons')
 
 GROUNDING_SCHEMA = {
     'type': 'object', 'additionalProperties': False, 'required': ['results'],
     'properties': {'results': {'type': 'array', 'items': {
         'type': 'object', 'additionalProperties': False,
-        'required': ['item_id', 'view_id', 'pointer_id', 'crop_bbox', 'bbox', 'confidence', 'rationale'],
+        'required': ['item_id', 'view_id', 'pointer_id', 'cells', 'bbox', 'confidence', 'rationale'],
         'properties': {
             'item_id': {'type': 'string'},
             'view_id': {'type': ['string', 'null'], 'description': 'Screenshot that shows what the item is about, or null.'},
             'pointer_id': {'type': ['string', 'null'],
                            'description': 'Pointing moment whose cursor is on the discussed feature, or null.'},
-            'crop_bbox': {'anyOf': [{'type': 'array', 'items': {'type': 'number'}}, {'type': 'null'}],
-                          'description': '[x0, y0, x1, y1] in the chosen pointing moment\'s close-up crop (0-1, '
-                                         'top-left origin) around the feature the cursor points at, or null.'},
+            'cells': {'anyOf': [{'type': 'array', 'items': {'type': 'string'}}, {'type': 'null'}],
+                      'description': 'Grid cells (e.g. "B2") of the chosen close-up that the pointed feature occupies, or null.'},
             'bbox': {'anyOf': [{'type': 'array', 'items': {'type': 'number'}}, {'type': 'null'}],
                      'description': '[x0, y0, x1, y1] normalized to the full screenshot around the discussed '
                                     'feature, used when no pointing moment is chosen; or null.'},
@@ -53,10 +55,10 @@ Rules:
 - Choose a pointer_id only if, at that moment, the cursor is on the feature the item discusses. Prefer the
   pointing moment closest to when the item was spoken. A pointer must belong to the chosen screenshot.
 - Box the discussed feature (part, dimension line, label, value or text) so a reader sees exactly what is meant.
-  With a pointer_id: give crop_bbox, the tightest box around the feature the cursor indicates, in that close-up
-  crop's coordinates (the crop's center is the cursor); include its label if the label is what the item names.
-  Without a pointer_id: give bbox in full-screenshot coordinates. Use null only when no single feature is meant
-  (e.g. the item is about the whole slide).
+  Each close-up carries a 5x5 grid: columns A-E left to right, rows 1-5 top to bottom; the cursor is in C3.
+  With a pointer_id: list in cells only the grid cells the indicated feature occupies (the line, part, dimension
+  or label the cursor is on), as few as cover it; never list the whole grid. Without a pointer_id: give bbox in
+  full-screenshot coordinates. Use null when no single feature is meant (e.g. the item is about the whole slide).
 - confidence: high = the screenshot clearly shows what the item states; medium = it shows the discussed
   subject but not every detail of the claim; low = weak or doubtful.
 - Use only the ids offered for that item. Return one result per item.'''
@@ -98,6 +100,26 @@ def data_url(path):
     return 'data:image/jpeg;base64,' + base64.b64encode(Path(path).read_bytes()).decode('ascii')
 
 
+def gridded_url(path):
+    """Close-up with a labeled grid, so the model can name cells instead of guessing coordinates."""
+    import io
+    from PIL import Image, ImageDraw
+    image = Image.open(path).convert('RGB')
+    width, height = image.size
+    draw = ImageDraw.Draw(image)
+    for index in range(1, GRID):
+        draw.line([(width * index / GRID, 0), (width * index / GRID, height)], fill=(255, 0, 255), width=1)
+        draw.line([(0, height * index / GRID), (width, height * index / GRID)], fill=(255, 0, 255), width=1)
+    for row in range(GRID):
+        for column in range(GRID):
+            x, y = width * column / GRID + 2, height * row / GRID + 2
+            draw.rectangle([x, y, x + 15, y + 11], fill=(255, 0, 255))
+            draw.text((x + 1, y), f'{GRID_COLUMNS[column]}{row + 1}', fill=(255, 255, 255))
+    buffer = io.BytesIO()
+    image.save(buffer, 'JPEG', quality=85)
+    return 'data:image/jpeg;base64,' + base64.b64encode(buffer.getvalue()).decode('ascii')
+
+
 def build_request(items, segments_by_id, visual, frames):
     spans = view_spans(visual)
     view_ids = list(dict.fromkeys(v for _, _, c in items for v in c['views']))
@@ -126,8 +148,8 @@ def build_request(items, segments_by_id, visual, frames):
         content.append({'type': 'text', 'text': (
             f'Pointing moment {identifier} on {pointer["view_id"]}, resting {format_time(pointer["start_s"])}-'
             f'{format_time(pointer["end_s"])}, cursor at ({pointer["x"]:.3f}, {pointer["y"]:.3f}); close-up crop '
-            f'of region {pointer["crop"]} with the cursor at its center:')})
-        content.append({'type': 'image_url', 'image_url': {'url': data_url(frames / 'pointers' / f'{identifier}.jpg'),
+            f'of region {pointer["crop"]} with the cursor at its center (grid cell C3):')})
+        content.append({'type': 'image_url', 'image_url': {'url': gridded_url(frames / 'pointers' / f'{identifier}.jpg'),
                                                            'detail': 'high'}})
     return content
 
@@ -145,20 +167,30 @@ def call_model(client, content, model=None):
     return choice.message.content or '', usage
 
 
-def clean_bbox(bbox):
+def clean_bbox(bbox, max_area=0.9):
     if not isinstance(bbox, list) or len(bbox) != 4 or not all(isinstance(v, (int, float)) for v in bbox):
         return None
     x0, y0, x1, y1 = [min(1.0, max(0.0, float(v))) for v in bbox]
-    if x1 - x0 < 0.01 or y1 - y0 < 0.01 or (x1 - x0) * (y1 - y0) > 0.9:
+    if x1 - x0 < 0.01 or y1 - y0 < 0.01 or (x1 - x0) * (y1 - y0) > max_area:
         return None
     return [round(x0, 4), round(y0, 4), round(x1, 4), round(y1, 4)]
 
 
-def crop_to_frame(crop_bbox, pointer):
-    """Map a box in a pointer close-up crop to full-frame coordinates; keep it only if it is at the cursor."""
-    box = clean_bbox(crop_bbox)
+def cells_to_frame(cells, pointer):
+    """Map grid cells of a pointer close-up to a full-frame box; keep it only if it is specific and at the cursor."""
     crop = pointer.get('crop')
-    if box is None or not isinstance(crop, (list, tuple)) or len(crop) != 4:
+    if not isinstance(cells, list) or not isinstance(crop, (list, tuple)) or len(crop) != 4:
+        return None
+    parsed = set()
+    for cell in cells:
+        cell = str(cell).strip().upper()
+        if len(cell) == 2 and cell[0] in GRID_COLUMNS and cell[1].isdigit() and 1 <= int(cell[1]) <= GRID:
+            parsed.add((GRID_COLUMNS.index(cell[0]), int(cell[1]) - 1))
+    if not parsed or len(parsed) > MAX_CELLS:
+        return None
+    columns, rows = [c for c, _ in parsed], [r for _, r in parsed]
+    box = [min(columns) / GRID, min(rows) / GRID, (max(columns) + 1) / GRID, (max(rows) + 1) / GRID]
+    if (box[2] - box[0]) * (box[3] - box[1]) > 0.6:
         return None
     x, y, w, h = crop
     full = [x + box[0] * w, y + box[1] * h, x + box[2] * w, y + box[3] * h]
@@ -197,7 +229,7 @@ def resolve(result, found, visual):
         cursor_source = 'tracked' if cursor else None
     return {'view_id': view_id, 'timestamp_s': moment, 'pointer_id': pointer['id'] if pointer else None,
             'cursor_norm': cursor, 'cursor_source': cursor_source,
-            'bbox': (crop_to_frame(result.get('crop_bbox'), pointer) if pointer else None) or clean_bbox(result.get('bbox')),
+            'bbox': (cells_to_frame(result.get('cells'), pointer) if pointer else None) or clean_bbox(result.get('bbox'), 0.5),
             'confidence': result['confidence'], 'rationale': str(result.get('rationale') or '')[:500]}
 
 

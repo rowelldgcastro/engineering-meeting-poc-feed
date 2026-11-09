@@ -10,7 +10,7 @@ transcript) after the meeting.
 recording (.m4a/.mp4/...) ──ffmpeg──▶ 16 kHz mono chunks ──Whisper──▶ timestamped transcript segments (S001…)
 transcript (.txt/.md/.docx/.srt/.vtt or pasted) ──parser──────────────▶ transcript segments (S001…)
 segments ──GPT-4o (strict JSON schema)──▶ deterministic verification ──▶ notes A–G ──▶ review / edit / approve ──▶ Markdown / PDF
-video frames ──OpenCV──▶ screenshots + cursor track + pointing moments ──GPT-4o vision──▶ a screenshot per note item
+video frames ──OpenCV──▶ screenshots + cursor track + pointing moments ──GPT-4.1 vision──▶ a screenshot per note item
 ```
 
 The notes have seven sections: **A** Engineering Context, **B** Decisions, **C** Design Alternatives,
@@ -22,7 +22,7 @@ the transcript excerpt. Sections with nothing supporting them say "Not discussed
 captures the screen: a screenshot whenever the shared content changes, the cursor position throughout (found in
 the frames by its arrow shape and motion, since an uploaded file has no cursor telemetry), and *pointing
 moments* where the presenter's cursor came to rest. Each note item is offered only the screenshots and
-pointing moments from when it was discussed (cited speech ±3 s). GPT-4o vision keeps a screenshot only if it
+pointing moments from when it was discussed (cited speech ±3 s). GPT-4.1 vision (`DESIGNNOTES_VISION_MODEL`) keeps a screenshot only if it
 shows what that item is about. The item then shows the frame from that moment with the cursor marked (red
 ring) and, when the discussed feature is clear, an orange box around it. Answers outside the item's time window
 or with low confidence are discarded. You can remove any screenshot. Markdown export becomes a `.zip`
@@ -32,7 +32,7 @@ or with low confidence are discarded. You can remove any screenshot. Markdown ex
 
 - Python 3.10+
 - `ffmpeg` (for recordings only). macOS: `brew install ffmpeg`. Ubuntu: `sudo apt install ffmpeg`.
-- An OpenAI API key. It's used for Whisper transcription and GPT-4o extraction.
+- An OpenAI API key. It's used for Whisper transcription, GPT-4o extraction and GPT-4.1 vision matching.
 
 ## Run
 

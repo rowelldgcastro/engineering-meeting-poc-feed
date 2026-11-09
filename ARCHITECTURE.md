@@ -11,7 +11,7 @@ are `openai`, `fpdf2` and `python-dotenv`.
 | `transcript.py` | Parse pasted/uploaded transcripts (txt, md, docx, srt, vtt) into segments; decoding; limits | stdlib |
 | `media.py` | `ffmpeg` conversion to 16 kHz mono MP3 in 10-minute chunks (each under the 25 MB API limit); Whisper transcription; chunk offsets mapped back to recording time | `transcript.finalize` |
 | `visuals.py` | Video analysis (OpenCV on ffmpeg-decoded frames at 4 fps): view (screenshot) selection by fingerprint change, cursor tracking by arrow-template matching and motion, pointing moments (cursor at rest ≥ 0.75 s), frame extraction, export annotation | `media.ffmpeg_path` |
-| `grounding.py` | Per-item candidate screenshots/pointing moments from the cited speech window (±3 s), GPT-4o vision call with strict schema, validation of answers against candidates, frame capture at the chosen moment | `visuals` |
+| `grounding.py` | Per-item candidate screenshots/pointing moments from the cited speech window (±3 s), GPT-4.1 vision call with strict schema (feature boxes as cells of a labeled grid on the screenshot), validation of answers against candidates (a box must contain the pointed spot), frame capture at the chosen moment | `visuals` |
 | `extraction.py` | Prompt, strict JSON schema, model call, deterministic verification (`build_notes`) | none (client passed in) |
 | `report.py` | Markdown rendering | `transcript.source_label` |
 | `pdf.py` | PDF rendering (`fpdf2`), same content as Markdown | `report` helpers |

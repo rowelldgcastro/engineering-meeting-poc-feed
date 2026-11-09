@@ -13,7 +13,7 @@ from pathlib import Path
 from designnotes import visuals
 from designnotes.transcript import format_time
 
-MODEL = os.getenv('DESIGNNOTES_VISION_MODEL', 'gpt-4o')
+MODEL = os.getenv('DESIGNNOTES_VISION_MODEL', 'gpt-4.1')
 WINDOW_S = 3.0
 MAX_POINTERS_PER_ITEM = 6
 MAX_ITEMS = 150

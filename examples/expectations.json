@@ -1,0 +1,62 @@
+{
+  "01_design_review_alternatives.txt": {
+    "scenario": "Component design review with multiple alternatives",
+    "decisions": {"min": 2, "max": 3},
+    "expected": [
+      {"section": "decisions", "any": ["M10"], "note": "Bolt pattern locked (4x M10, 120 x 80 mm)"},
+      {"section": "decisions", "any": ["casting", "A356", "cast"], "note": "Casting dropped"},
+      {"section": "alternatives", "any": ["6061-T6", "machined"], "note": "Machined aluminium option"},
+      {"section": "alternatives", "any": ["304", "sheet"], "note": "Sheet metal option"},
+      {"section": "evidence", "any": ["84"], "note": "FEA 84 Hz sheet-metal first mode"},
+      {"section": "open_issues", "any": ["flange", "brake"], "note": "Return flange feasibility check"},
+      {"section": "lessons", "any": ["porosity", "P-150"], "note": "P-150 porosity cracks"}
+    ],
+    "forbidden_decisions": ["sheet metal wins", "go machined", "304 stainless sheet is selected"]
+  },
+  "02_one_on_one_past_decision.md": {
+    "scenario": "One-on-one explanation of a previous decision",
+    "decisions": {"min": 1, "max": 3},
+    "expected": [
+      {"section": "decisions", "any": ["helical", "7.5"], "note": "Helical 7.5:1 chosen over worm"},
+      {"section": "decisions", "any": ["brake"], "note": "Dedicated brake rule for holding load"},
+      {"section": "rationale", "any": ["efficien", "70", "96"], "note": "Efficiency trade-off"},
+      {"section": "evidence", "any": ["78"], "note": "78 C measurement"},
+      {"section": "lessons", "any": ["tensioner"], "note": "Specify automatic tensioner from the start"}
+    ],
+    "forbidden_decisions": ["worm gear is selected", "5.5 kW motor"]
+  },
+  "03_troubleshooting_unresolved.txt": {
+    "scenario": "Troubleshooting with unresolved issues",
+    "decisions": {"min": 0, "max": 0},
+    "expected": [
+      {"section": "evidence", "any": ["14", "2,000", "2000"], "note": "14 returns / 2,000 h failures"},
+      {"section": "open_issues", "any": ["serial", "firmware"], "note": "Check serial numbers vs firmware"},
+      {"section": "open_issues", "any": ["temperature", "field service"], "note": "Site temperatures"},
+      {"section": "open_issues", "any": ["chamber", "bench"], "note": "Thermal chamber test, no owner"},
+      {"section": "alternatives", "any": ["ball bearing"], "note": "Ball bearing fan proposal, undecided"}
+    ],
+    "forbidden_decisions": ["ball bearing"]
+  },
+  "04_values_constraints_calculations.txt": {
+    "scenario": "Technical values, constraints and calculations",
+    "decisions": {"min": 1, "max": 2},
+    "expected": [
+      {"section": "decisions", "all": ["63", "40"], "note": "63 mm bore, 40 mm rod"},
+      {"section": "rationale", "any": ["160 bar"], "note": "160 bar pressure constraint"},
+      {"section": "evidence", "any": ["36.8", "49.9", "7.5"], "note": "Calculated values preserved"},
+      {"section": "rationale", "any": ["single cylinder", "second actuator"], "note": "Single-cylinder assumption"},
+      {"section": "open_issues", "any": ["mounting", "flange"], "note": "Mounting style to confirm"}
+    ],
+    "forbidden_decisions": ["front flange", "54 millimetre", "54 mm"]
+  },
+  "05_ambiguous_no_decision.txt": {
+    "scenario": "Ambiguous discussion with no final decision",
+    "decisions": {"min": 0, "max": 0},
+    "expected": [
+      {"section": "alternatives", "any": ["IP67"], "note": "IP67 option"},
+      {"section": "alternatives", "any": ["O-ring", "potted", "potting"], "note": "Seal options"},
+      {"section": "open_issues", "any": ["customer", "kickoff"], "note": "Find out customer requirement"}
+    ],
+    "forbidden_decisions": ["IP67", "O-ring", "IP69K"]
+  }
+}

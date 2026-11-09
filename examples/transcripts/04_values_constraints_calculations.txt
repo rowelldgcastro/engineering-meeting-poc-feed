@@ -1,0 +1,13 @@
+[00:00:03] Hannah: This is the sizing check for the hydraulic cylinder on the lift table, project LT-9. Requirement is to lift 2,500 kg, with a 1.5 safety factor on load.
+[00:00:20] Felix: So design load is 3,750 kg, which is about 36.8 kN.
+[00:00:29] Hannah: Correct. System pressure is limited to 160 bar because of the existing power unit. We can't change that.
+[00:00:42] Felix: At 160 bar, 36.8 kN needs about 23 square centimetres of piston area. That's a bore of about 54 millimetres. Next standard size up is 63 millimetre bore.
+[00:01:05] Hannah: With a 63 bore, area is 31.2 square centimetres, so capacity is about 49.9 kN at 160 bar. That gives us margin.
+[00:01:20] Felix: Rod size: buckling. Stroke is 800 millimetres, pinned both ends. I ran Euler with a factor of 3.5 and a 36 millimetre rod is the minimum. Our catalogue has 40 millimetre for that bore, so we'd use 40.
+[00:01:45] Hannah: Speed requirement is full stroke in 20 seconds or less, so 40 millimetres per second.
+[00:01:58] Felix: Flow then is area times speed, 31.2 square centimetres times 4 centimetres per second, about 125 cubic centimetres per second, which is 7.5 litres per minute. The power unit gives 8 litres per minute, so we're fine but tight.
+[00:02:20] Hannah: Tight is okay as long as we don't add a second actuator on the same unit. Assumption is single cylinder only.
+[00:02:35] Felix: Also temperature. Seals are rated to 80 degrees C oil temperature. The power unit runs at about 55 normally.
+[00:02:48] Hannah: Good. So we're going with the 63 millimetre bore, 40 millimetre rod, 800 stroke. Felix, please write it up and attach the buckling calc sheet, the file is LT9-CALC-003.
+[00:03:05] Felix: Will do. One open point: the mounting is pinned in my calc, but the drawing shows a front flange on the current concept. If it's flange mounted the buckling length changes.
+[00:03:20] Hannah: Right, we need to confirm the mounting style with the structure team before release.

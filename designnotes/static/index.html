@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Engineering Design Notes</title><link rel="stylesheet" href="/styles.css"><script src="/app.js" defer></script></head>
+<body>
+<header><h1>Engineering Design Notes</h1><div class="row"><span id="keyState" class="muted"></span><button id="quit" type="button">Quit</button></div></header>
+<main>
+<aside>
+  <button id="newNotes" class="primary" type="button">Generate notes from recording or transcript</button>
+  <h3>Saved notes</h3>
+  <div id="notesList"></div>
+  <p class="muted small">Stored locally on this computer.</p>
+</aside>
+<article>
+  <div id="error" role="alert"></div>
+
+  <section id="inputView" class="card">
+    <h2>Generate engineering notes</h2>
+    <p class="muted">Upload a meeting recording or an existing transcript. The recording is transcribed with timestamps, then engineering
+      information is extracted and checked against the transcript. Uploads are sent to OpenAI; API charges apply.</p>
+    <div id="keyBox" class="hidden">
+      <label for="apiKey">OpenAI API key (kept in memory only, not saved)</label>
+      <div class="row"><input id="apiKey" type="password" autocomplete="off" placeholder="sk-..."><button id="saveKey" type="button">Use key</button></div>
+    </div>
+    <div class="tabs" role="tablist">
+      <button id="tabUpload" class="tab active" type="button" role="tab" aria-selected="true">Upload file</button>
+      <button id="tabPaste" class="tab" type="button" role="tab" aria-selected="false">Paste transcript</button>
+    </div>
+    <div id="uploadPane">
+      <label for="file" id="dropZone" class="drop">
+        <strong>Choose a file</strong> or drop it here
+        <span class="muted small" id="formats"></span>
+        <span id="fileName"></span>
+      </label>
+      <input id="file" type="file" class="visually-hidden">
+      <p id="ffmpegWarning" class="warning hidden">ffmpeg was not found, so recordings cannot be processed. Install it (macOS: <code>brew install ffmpeg</code>) and restart, or upload a transcript.</p>
+    </div>
+    <div id="pastePane" class="hidden">
+      <label for="pasteText">Transcript text</label>
+      <textarea id="pasteText" rows="12" placeholder="[00:00:12] Alice: Let's review the bracket design..."></textarea>
+    </div>
+    <div class="grid2">
+      <div><label for="title">Meeting title (optional)</label><input id="title" maxlength="200" placeholder="e.g. Pump bracket design review"></div>
+      <div><label for="project">Project / component (optional)</label><input id="project" maxlength="200" placeholder="e.g. P-200 pump mount"></div>
+    </div>
+    <div id="glossaryBox"><label for="glossary">Technical terms to help transcription (optional, recordings only)</label>
+      <input id="glossary" maxlength="800" placeholder="e.g. 6061-T6, M8, Inconel 718, FEA, GD&amp;T"></div>
+    <p><button id="generate" class="primary" type="button">Generate Engineering Notes</button></p>
+  </section>
+
+  <section id="notesView" class="hidden">
+    <div class="card">
+      <div class="row spread">
+        <div><h2 id="notesTitle"></h2><p id="notesMeta" class="muted"></p></div>
+        <div class="row" id="actions">
+          <button id="approve" class="primary" type="button">Approve notes</button>
+          <button id="exportMd" type="button">Export Markdown</button>
+          <button id="exportPdf" type="button">Export PDF</button>
+          <button id="editTitle" type="button">Edit title</button>
+          <button id="retry" class="hidden" type="button">Retry</button>
+          <button id="deleteNotes" class="danger" type="button">Delete</button>
+        </div>
+      </div>
+      <p id="progress" class="progress hidden"></p>
+      <div id="reviewState"></div>
+      <div id="warnings" class="warning hidden"></div>
+    </div>
+    <div class="layout">
+      <div id="notes"></div>
+      <aside id="sourcePanel" class="card">
+        <h3>Source transcript</h3>
+        <p class="muted small">Select a source tag on any item to see the supporting excerpt.</p>
+        <div id="sourceExcerpt"></div>
+        <details id="fullTranscriptBox"><summary>Full transcript</summary><div id="fullTranscript"></div></details>
+      </aside>
+    </div>
+  </section>
+</article>
+</main>
+</body></html>

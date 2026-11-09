@@ -1,0 +1,13 @@
+Ana: I've been thinking about the enclosure for the sensor head. Maybe we should go to IP67 instead of IP65.
+Ben: IP67 would be nice, but is it actually required? I don't remember the customer asking for submersion.
+Ana: Not explicitly. There was something in the kickoff about wash-down, but I'm not sure if it was high pressure.
+Ben: If it's high-pressure wash-down, IP69K would be the real target, not IP67.
+Ana: True. That'd change the seal design a lot. Probably an O-ring groove instead of the flat gasket.
+Carl: The flat gasket is cheaper and we already have the tooling. I'd keep it unless we have to change.
+Ana: I kind of prefer the O-ring anyway, it's more forgiving with the plastic housing creeping over time.
+Ben: Maybe. Or we could look at a potted design, no seal at all.
+Carl: Potting makes repair impossible though.
+Ana: Yeah. I don't know. I think we need to find out what the customer actually needs first.
+Ben: Someone should look at the kickoff notes.
+Carl: Could be a while, the customer contact is on leave.
+Ana: Let's park it and come back to it.

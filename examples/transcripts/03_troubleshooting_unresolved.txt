@@ -1,0 +1,16 @@
+00:00:02 - Lena: So the problem is the cooling fan on the E-40 controller. Field units are failing after about 2,000 hours. We've had 14 returns out of roughly 900 units shipped.
+00:00:25 - Raj: I opened six of the returned fans. Four had bearing wear, the sleeve bearing was dry. Two looked fine mechanically but the fan wouldn't start, maybe the driver IC.
+00:00:58 - Lena: Do we know the ambient at those sites?
+00:01:06 - Raj: Not for all of them. Two customers are in Arizona and one in a foundry, so probably hot. The fan is rated for 40,000 hours at 40 degrees C, but life drops fast above that.
+00:01:35 - Lena: Could it be the PWM frequency? We changed firmware in March and moved the fan PWM from 25 kHz to 1 kHz to fix an EMI issue.
+00:01:58 - Raj: That's possible. Low frequency PWM can cause the motor to stall at low duty cycles. I haven't checked if the two non-starting fans came from post-March units.
+00:02:20 - Omar: There's also the dust filter. We removed it in revision C to improve airflow. Without it, dust could get into the sleeve bearing.
+00:02:41 - Lena: So we have three theories: heat, PWM change, or dust after removing the filter. We don't have enough data to pick one.
+00:03:00 - Omar: Should we just switch to a ball bearing fan? It's about 2 dollars more.
+00:03:10 - Lena: Maybe, but I don't want to change the part before we know the cause. If it's the PWM issue a ball bearing fan won't fix it.
+00:03:28 - Raj: I can check the serial numbers against the firmware version. That'll tell us if the non-starting fans are post-March.
+00:03:40 - Lena: Yes please. And Omar, can you ask field service for site temperatures on all 14 returns?
+00:03:52 - Omar: I'll try, but some customers may not know.
+00:04:05 - Lena: We should also run a bench test: a few fans at 1 kHz PWM and low duty cycle in the thermal chamber at 55 degrees. Who has chamber time?
+00:04:20 - Raj: Not sure, the chamber is booked through the end of the month. We'll need to figure that out.
+00:04:31 - Lena: Okay. We're not deciding anything today. Let's meet again once we have the serial number data.

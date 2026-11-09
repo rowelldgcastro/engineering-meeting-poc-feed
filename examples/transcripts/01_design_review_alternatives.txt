@@ -1,0 +1,18 @@
+Bracket design review - P-200 pump mounting bracket
+Attendees: Maria Chen (mechanical lead), Dev Patel (manufacturing), Sam Okafor (test)
+
+[00:00:04] Maria: Okay, let's start. The goal today is to pick a concept for the P-200 pump mounting bracket. The pump weighs 18 kg and the bracket has to survive the 5 g shock requirement from spec ES-114.
+[00:00:31] Maria: We have three options on the table. Option A is a machined 6061-T6 aluminium block, option B is a bent 3 mm 304 stainless sheet, option C is a cast A356 aluminium part.
+[00:01:02] Dev: From manufacturing, the machined block is about 140 dollars each at our volume of 500 units per year. The bent sheet is about 35 dollars. Casting needs a tool, roughly 12,000 dollars, then about 22 dollars a part.
+[00:01:40] Sam: Stiffness matters too. The pump has a running speed of 2,950 rpm, so about 49 hertz. We want the first bracket mode above 100 hertz to keep a 2x margin.
+[00:02:05] Maria: Right. My FEA from last week showed the sheet-metal version at 84 hertz first mode. The machined block was at 210 hertz. I haven't modeled the casting yet.
+[00:02:33] Dev: The sheet metal could get stiffer if we add a return flange, but that's another bend and I'm not sure our brake can do a 3 mm return flange that short.
+[00:03:01] Sam: The casting worries me for the shock load. Porosity in A356 has bitten us before on the P-150 housing, we had cracks starting from porosity at the bolt bosses.
+[00:03:28] Maria: Good point. So casting is out for now, the volume doesn't justify the tool anyway and we don't want the porosity risk.
+[00:03:45] Dev: Agreed, drop the casting.
+[00:04:02] Maria: Between A and B, I'd rather not decide until Dev confirms the flange. If the flange works and gets us over 100 hertz, sheet metal wins on cost. If not, we go machined.
+[00:04:30] Dev: I'll check the brake tooling for a 3 mm return flange and get back by next Wednesday.
+[00:04:48] Maria: And I'll rerun the FEA on the sheet version with the flange added. Sam, can you pull the shock test fixture details for the 5 g test?
+[00:05:05] Sam: Yes, I'll send the fixture drawing, it's drawing TF-2207.
+[00:05:20] Maria: One thing we did decide: bolt pattern stays at four M10 bolts on a 120 by 80 millimetre pattern, matching the existing skid. That's locked regardless of concept.
+[00:05:41] Dev: Fine by me.

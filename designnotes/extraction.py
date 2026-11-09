@@ -21,6 +21,8 @@ MAX_ITEMS_PER_SECTION = 60
 MAX_TEXT = 2000
 GAP_MIN_S = 20.0
 GAP_MIN_SEGMENTS = 4
+COARSE_S = 45.0
+COARSE_SEGMENTS = 8
 SCHEMA_VERSION = 1
 
 
@@ -134,6 +136,8 @@ Rules:
   aspect "design" = the design/configuration as presented: components, assemblies, layouts, drawings,
   views or cross-sections walked through, how parts connect, and which dimension or feature is changing.
   Use one item per distinct view, component group or feature explained, naming the parts exactly as spoken.
+- Keep each item to one point and cite only the few segments that state it (normally under 30 seconds of
+  speech). Never summarize a long walkthrough in one item; split it in the order presented.
 - participants: only people who speak or are named in the transcript; role only if stated.
 - rationale: technical reasons, trade-offs (performance, cost, manufacturability, reliability...),
   assumptions and constraints that were actually discussed.
@@ -454,9 +458,23 @@ def build_notes(payload, segments, title=None, project=None):
             'stats': {'items': sum(len(v) for v in sections.values()), 'flagged': flagged, 'dropped': len(dropped)}}
 
 
+def is_coarse(item, segments_by_id):
+    """An item whose citations span so much of the meeting that it summarizes rather than records."""
+    cited = [segments_by_id[ref] for ref in item.get('source_ids', []) if ref in segments_by_id]
+    if not cited:
+        return False
+    starts = [s.get('start_s') for s in cited]
+    ends = [s.get('end_s') for s in cited]
+    if None in starts or None in ends:
+        return len(cited) >= COARSE_SEGMENTS
+    return max(ends) - min(starts) > COARSE_S
+
+
 def uncovered(notes, segments):
-    """Runs of consecutive segments that no item cites and that are long enough to matter."""
-    cited = {ref for items in notes['sections'].values() for item in items for ref in item.get('source_ids', [])}
+    """Runs of consecutive segments cited by no specific item that are long enough to matter."""
+    by_id = {s['id']: s for s in segments}
+    cited = {ref for items in notes['sections'].values() for item in items if not is_coarse(item, by_id)
+             for ref in item.get('source_ids', [])}
     runs, current = [], []
     for segment in segments + [None]:
         if segment is not None and segment['id'] not in cited:
@@ -470,6 +488,28 @@ def uncovered(notes, segments):
                              'start_s': current[0].get('start_s'), 'end_s': current[-1].get('end_s')})
         current = []
     return runs
+
+
+def drop_superseded(notes, segments):
+    """Remove summary items whose every source is also cited by a more specific item, then renumber."""
+    by_id = {s['id']: s for s in segments}
+    sections = notes['sections']
+    specific = {ref for items in sections.values() for item in items if not is_coarse(item, by_id)
+                for ref in item.get('source_ids', [])}
+    for key, items in sections.items():
+        kept = []
+        for item in items:
+            if is_coarse(item, by_id) and set(item['source_ids']) <= specific:
+                notes['dropped'].append({'section': key, 'text': item.get('text') or item.get('name'),
+                                         'reason': 'Replaced by more specific items covering the same discussion.'})
+            else:
+                kept.append(item)
+        for index, item in enumerate(kept, start=1):
+            item['id'] = f'{ID_PREFIX[key]}{index}'
+        sections[key] = kept
+    notes['stats']['items'] = sum(len(v) for v in sections.values())
+    notes['stats']['dropped'] = len(notes['dropped'])
+    return notes
 
 
 def extract(client, transcript, title=None, project=None, model=None):
@@ -489,7 +529,7 @@ def extract(client, transcript, title=None, project=None, model=None):
             extra_raw, extra_usage = call_model(client, segments, title, project, model, focus=focus)
             first, extra = json.loads(raw), json.loads(extra_raw)
             merged = {key: first[key] + (extra.get(key) or []) for key in SECTION_KEYS}
-            notes = build_notes(merged, segments, title, project)
+            notes = drop_superseded(build_notes(merged, segments, title, project), segments)
             raw = json.dumps({'first_pass': first, 'gap_pass': extra})
             usage = {'first_pass': usage, 'gap_pass': extra_usage}
         except Exception:  # the first pass still stands; remaining gaps are reported below

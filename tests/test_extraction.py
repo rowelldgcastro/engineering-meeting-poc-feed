@@ -130,19 +130,22 @@ def test_helpers():
     assert normalize('M8 × 1.25, “Grade 8.8”.') == 'm8 1.25 grade 8.8'
 
 
-def test_uncited_stretch_gets_a_gap_pass_and_remaining_gaps_are_reported():
-    from designnotes.extraction import extract
-    segments = [{'id': f'S{i:03d}', 'start_s': i * 10.0, 'end_s': i * 10.0 + 10, 'speaker': None,
-                 'text': text, 'line': None}
-                for i, text in enumerate(['We decided to use the 3.2 mm bracket.', 'This is the front cross member.',
-                                          'Here is the seat rail garnish.', 'Underneath we have the seat rail.',
-                                          'Thanks everyone.'], start=1)]
+def test_uncited_stretch_gets_a_gap_pass_and_replaces_summary_items():
+    texts = ['We decided to use the 3.2 mm bracket.', 'This is the front cross member.', 'Here is the seat rail garnish.',
+             'Underneath we have the seat rail.', 'Then four tightening bolts.', 'At the bottom is the floor panel.',
+             'Thanks everyone.']
+    segments = [{'id': f'S{i:03d}', 'start_s': i * 10.0, 'end_s': i * 10.0 + 10, 'speaker': None, 'text': text, 'line': None}
+                for i, text in enumerate(texts, start=1)]
     first = {key: [] for key in SECTION_KEYS}
     first['decisions'] = [item(text='Use the 3.2 mm bracket', quote='decided to use the 3.2 mm bracket',
                                source_ids=['S001'], parameters=['3.2 mm'], rationale=None)]
+    first['context'] = [item(text='Walkthrough of the seat structure', quote='seat rail garnish',
+                             source_ids=['S002', 'S003', 'S004', 'S005', 'S006'], aspect='design')]
     gap = {key: [] for key in SECTION_KEYS}
-    gap['context'] = [item(text='Front cross member and seat rail garnish shown', quote='seat rail garnish',
-                           source_ids=['S002', 'S003'], aspect='design')]
+    gap['context'] = [item(text='Front cross member and seat rail garnish', quote='seat rail garnish',
+                           source_ids=['S002', 'S003'], aspect='design'),
+                      item(text='Seat rail, four bolts and floor panel below', quote='floor panel',
+                           source_ids=['S004', 'S005', 'S006'], aspect='design')]
     client = FakeClient()
     answers = iter([first, gap])
     original = client._create
@@ -152,10 +155,20 @@ def test_uncited_stretch_gets_a_gap_pass_and_remaining_gaps_are_reported():
         return original(**kwargs)
     client.chat.completions.create = create
     notes, raw, usage = extract(client, {'segments': segments})
-    assert len(client.requests) == 2 and 'S002, S003, S004, S005' in client.requests[1]['messages'][1]['content']
-    assert [i['aspect'] for i in notes['sections']['context']] == ['design']
-    assert notes['coverage_gaps'] == [{'source_ids': ['S004', 'S005'], 'start_s': 40.0, 'end_s': 60.0}]
+    assert len(client.requests) == 2
+    assert 'S002, S003, S004, S005, S006, S007' in client.requests[1]['messages'][1]['content']
+    assert [(i['id'], i['text']) for i in notes['sections']['context']] == [
+        ('C1', 'Front cross member and seat rail garnish'), ('C2', 'Seat rail, four bolts and floor panel below')]
+    assert notes['dropped'][-1]['reason'].startswith('Replaced by more specific items')
+    assert notes['coverage_gaps'] == []
     assert set(json.loads(raw)) == {'first_pass', 'gap_pass'}
+
+
+def test_remaining_gaps_are_reported(segments):
+    from designnotes.extraction import uncovered
+    long = [{'id': f'S{i:03d}', 'start_s': i * 10.0, 'end_s': i * 10.0 + 10, 'text': 'x'} for i in range(1, 5)]
+    notes = {'sections': {'context': [{'source_ids': ['S001']}]}}
+    assert uncovered(notes, long) == [{'source_ids': ['S002', 'S003', 'S004'], 'start_s': 20.0, 'end_s': 50.0}]
 
 
 def test_short_uncited_tail_is_not_a_gap(segments):

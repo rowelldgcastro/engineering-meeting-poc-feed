@@ -42,8 +42,9 @@ def sample_payload():
 
 
 class FakeClient:
-    def __init__(self, payload=None, finish_reason='stop', segments=None):
+    def __init__(self, payload=None, finish_reason='stop', segments=None, grounding=None):
         self.payload = sample_payload() if payload is None else payload
+        self.grounding = grounding
         self.finish_reason = finish_reason
         self.requests = []
         self.transcriptions = []
@@ -55,7 +56,10 @@ class FakeClient:
 
     def _create(self, **kwargs):
         self.requests.append(kwargs)
-        content = self.payload if isinstance(self.payload, str) else json.dumps(self.payload)
+        payload = self.payload
+        if kwargs.get('response_format', {}).get('json_schema', {}).get('name') == 'visual_grounding':
+            payload = self.grounding(kwargs) if callable(self.grounding) else (self.grounding or {'results': []})
+        content = payload if isinstance(payload, str) else json.dumps(payload)
         message = SimpleNamespace(content=content, refusal=None)
         return SimpleNamespace(choices=[SimpleNamespace(message=message, finish_reason=self.finish_reason)], usage=None)
 

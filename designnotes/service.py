@@ -11,14 +11,14 @@ import time
 import uuid
 from pathlib import Path
 
-from designnotes import extraction, media
+from designnotes import extraction, grounding, media, visuals
 from designnotes.pdf import render_pdf
 from designnotes.report import render_markdown
 from designnotes.transcript import SUPPORTED_TEXT_EXTENSIONS, TranscriptError, parse_transcript, read_upload
 
 MAX_UPLOAD_BYTES = 2 * 1024 ** 3
 MAX_TRANSCRIPT_UPLOAD_BYTES = 20 * 1024 ** 2
-ACTIVE_STATES = ('queued', 'transcribing', 'extracting')
+ACTIVE_STATES = ('queued', 'transcribing', 'analyzing', 'extracting', 'matching')
 
 
 def default_root():
@@ -123,7 +123,8 @@ class NotesService:
         self.directory(identifier).mkdir(mode=0o700)
         return {'id': identifier, 'title': title or 'Engineering design notes', 'project': project,
                 'glossary': glossary, 'created_at': time.time(), 'state': 'queued', 'progress': 'Queued',
-                'error': None, 'source': source, 'transcript': None, 'notes': None,
+                'error': None, 'source': source, 'transcript': None, 'notes': None, 'visual': None,
+                'visual_status': None,
                 'review': {'approved_at': None, 'edited_at': None}, 'usage': {}}
 
     # ------------------------------------------------------------ creation
@@ -221,9 +222,15 @@ class NotesService:
                     progress=lambda message: self._update(record, progress=message))
                 shutil.rmtree(directory / 'audio', ignore_errors=True)
                 self._update(record, transcript=transcript)
+            if record['source']['kind'] == 'recording' and record.get('visual') is None:
+                self.analyze_video(record, directory)
             self._update(record, state='extracting', progress='Extracting engineering information', error=None)
             notes, raw, usage = extraction.extract(client, record['transcript'], record['title'], record['project'])
             (directory / 'model_response.json').write_text(raw, encoding='utf-8')
+            usage = {'extraction': usage}
+            if record.get('visual') and record['visual'].get('views'):
+                self._update(record, state='matching', progress='Matching screenshots and cursor positions to notes')
+                usage['grounding'] = self.match_visuals(client, record, notes, directory)
             self._update(record, notes=notes, usage=usage, state='ready', progress='Ready for review',
                          review={'approved_at': None, 'edited_at': None})
         except (TranscriptError, extraction.ExtractionError, ValueError) as error:
@@ -233,11 +240,52 @@ class NotesService:
             self._update(record, state='failed', progress='Failed',
                          error=f'Processing failed ({message}). Your upload is kept; check the API key/network and Retry.')
 
+    def analyze_video(self, record, directory):
+        """Screenshots, cursor track and pointing moments. Failures never block the notes themselves."""
+        source = directory / record['source']['path']
+        self._update(record, state='analyzing', progress='Finding screenshots and cursor movements', error=None)
+        try:
+            shutil.rmtree(directory / 'frames', ignore_errors=True)
+            analysis = visuals.analyze(source, directory / 'frames', progress=lambda message: self._update(record, progress=message))
+        except Exception as error:  # keep transcript-only notes if the video cannot be analyzed
+            message = str(error) if isinstance(error, visuals.VisualError) else f'Video analysis failed ({type(error).__name__}).'
+            self._update(record, visual={'views': [], 'pointers': [], 'timeline': [], 'track': []},
+                         visual_status={'state': 'failed', 'message': message + ' Notes were generated without screenshots.'})
+            return
+        if analysis is None:
+            self._update(record, visual={'views': [], 'pointers': [], 'timeline': [], 'track': []},
+                         visual_status={'state': 'none', 'message': 'Audio-only recording: no screenshots.'})
+            return
+        self._update(record, visual=analysis, visual_status={'state': 'analyzed', 'message': None})
+
+    def match_visuals(self, client, record, notes, directory):
+        try:
+            shutil.rmtree(directory / 'visuals', ignore_errors=True)
+            summary, raw, usage = grounding.attach(client, notes, record['transcript'], record['visual'],
+                                                   directory / record['source']['path'], directory)
+            if raw:
+                (directory / 'grounding_response.json').write_text(raw, encoding='utf-8')
+            cursor = record['visual'].get('cursor', {})
+            message = f'{summary["matched"]} of {summary["items"]} items have a matching screenshot'
+            message += f' ({summary["with_cursor"]} with cursor position).' if cursor.get('detected') else '; no cursor was detected in the video.'
+            record['visual_status'] = {'state': 'matched', 'message': message, **summary}
+            return usage
+        except Exception as error:  # network/model failure: keep the notes, report the missing screenshots
+            for items in notes['sections'].values():
+                for item in items:
+                    item.pop('visuals', None)
+            detail = str(error) if isinstance(error, visuals.VisualError) else type(error).__name__
+            record['visual_status'] = {'state': 'failed', 'message': f'Screenshot matching failed ({detail}). Use Retry to try again.'}
+            return {}
+
     def retry(self, identifier):
         with self.lock:
             record = self.get(identifier)
-            if record['state'] != 'failed':
+            failed_visuals = (record.get('visual_status') or {}).get('state') == 'failed'
+            if record['state'] != 'failed' and not (record['state'] == 'ready' and failed_visuals):
                 raise ValueError('Only failed notes can be retried.')
+            if failed_visuals:
+                record['visual'] = None
             if record['transcript'] is None and not record['source'].get('path'):
                 raise ValueError('The original upload is no longer available.')
             self.make_client()
@@ -252,7 +300,7 @@ class NotesService:
             raise ValueError('Notes are not ready yet.')
         return record
 
-    def edit(self, identifier, section, item_id, text=None, delete=False):
+    def edit(self, identifier, section, item_id, text=None, delete=False, remove_visual=False):
         with self.lock:
             record = self._ready(identifier)
             items = record['notes']['sections'].get(section)
@@ -263,6 +311,11 @@ class NotesService:
                 raise ValueError('Unknown item.')
             if delete:
                 items.remove(matches[0])
+            elif remove_visual:
+                if not matches[0].get('visuals'):
+                    raise ValueError('This item has no screenshot.')
+                matches[0]['visuals'] = []
+                matches[0]['edited'] = True
             else:
                 field = 'name' if section == 'participants' else 'text'
                 value = clean_field(text, 'Item text', extraction.MAX_TEXT, required=True)
@@ -298,7 +351,41 @@ class NotesService:
         with self.lock:
             return render_markdown(copy.deepcopy(self._ready(identifier)))
 
+    def visual_items(self, record):
+        return [visual for items in record['notes']['sections'].values() for item in items
+                for visual in item.get('visuals') or []]
+
+    def visual_path(self, identifier, name):
+        if not isinstance(name, str) or not visuals.VISUAL_FILE.fullmatch(name):
+            raise ValueError('Invalid screenshot name.')
+        with self.lock:
+            record = self.get(identifier)
+            if not record.get('notes') or name not in {v['file'] for v in self.visual_items(record)}:
+                raise KeyError('Unknown screenshot.')
+        path = self.directory(identifier) / 'visuals' / name
+        if not path.is_file():
+            raise KeyError('Unknown screenshot.')
+        return path
+
+    def export_bundle(self, identifier):
+        """Markdown export: plain text, or a .zip with annotated screenshots when the notes have any."""
+        import io
+        import zipfile
+        with self.lock:
+            record = copy.deepcopy(self._ready(identifier))
+        attached = self.visual_items(record)
+        if not attached:
+            return render_markdown(record).encode('utf-8'), 'md'
+        output = io.BytesIO()
+        with zipfile.ZipFile(output, 'w', zipfile.ZIP_DEFLATED) as archive:
+            archive.writestr('notes.md', render_markdown(record, images='images'))
+            directory = self.directory(identifier) / 'visuals'
+            for visual in attached:
+                if (directory / visual['file']).is_file():
+                    archive.writestr('images/' + visual['file'], visuals.annotate(directory / visual['file'], visual))
+        return output.getvalue(), 'zip'
+
     def export_pdf(self, identifier):
         with self.lock:
             record = copy.deepcopy(self._ready(identifier))
-        return render_pdf(record)
+        return render_pdf(record, self.directory(identifier) / 'visuals')

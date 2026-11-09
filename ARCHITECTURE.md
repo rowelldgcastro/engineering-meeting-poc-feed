@@ -10,6 +10,8 @@ are `openai`, `fpdf2` and `python-dotenv`.
 |---|---|---|
 | `transcript.py` | Parse pasted/uploaded transcripts (txt, md, docx, srt, vtt) into segments; decoding; limits | stdlib |
 | `media.py` | `ffmpeg` conversion to 16 kHz mono MP3 in 10-minute chunks (each under the 25 MB API limit); Whisper transcription; chunk offsets mapped back to recording time | `transcript.finalize` |
+| `visuals.py` | Video analysis (OpenCV on ffmpeg-decoded frames at 4 fps): view (screenshot) selection by fingerprint change, cursor tracking by arrow-template matching and motion, pointing moments (cursor at rest ≥ 0.75 s), frame extraction, export annotation | `media.ffmpeg_path` |
+| `grounding.py` | Per-item candidate screenshots/pointing moments from the cited speech window (±3 s), GPT-4o vision call with strict schema, validation of answers against candidates, frame capture at the chosen moment | `visuals` |
 | `extraction.py` | Prompt, strict JSON schema, model call, deterministic verification (`build_notes`) | none (client passed in) |
 | `report.py` | Markdown rendering | `transcript.source_label` |
 | `pdf.py` | PDF rendering (`fpdf2`), same content as Markdown | `report` helpers |
@@ -46,9 +48,22 @@ Section-specific fields: context `aspect` (subject/objective/background); altern
 "needs verification".
 
 Record on disk (`<data-dir>/<32-hex id>/record.json`) holds the title, project, glossary, source
-metadata, state (`queued → transcribing → extracting → ready | failed`), progress text, error,
-transcript, notes and review (`approved_at`, `edited_at`). The folder also keeps `source.<ext>` (the
-original upload) and `model_response.json` (raw model output, for auditing). Temporary audio chunks are
+metadata, state (`queued → transcribing → analyzing → extracting → matching → ready | failed`), progress text, error,
+transcript, `visual` (analysis: `views`, `timeline`, `pointers`, `track`, `cursor`), `visual_status`, notes and
+review (`approved_at`, `edited_at`). The folder also keeps `source.<ext>` (the original upload),
+`model_response.json` / `grounding_response.json` (raw model output, for auditing), `frames/views/V01.jpg…`,
+`frames/pointers/P001.jpg…` (cursor close-ups) and `visuals/<item id>.jpg` (the frame attached to each item).
+
+Visual attached to an item (`item["visuals"]`, at most one). Coordinates are normalized to the full frame, top-left origin:
+
+```json
+{"file": "D1.jpg", "view_id": "V01", "timestamp_s": 137.1, "pointer_id": "P010", "cursor_norm": [0.676, 0.572],
+ "cursor_source": "pointing", "bbox": [0.52, 0.41, 0.83, 0.70], "confidence": "high", "rationale": "…"}
+```
+
+`cursor_source` is `pointing` (cursor at rest on the feature), `tracked` (last known position) or `null`
+(not visible). Video analysis and matching failures never fail the notes; they set `visual_status.state =
+failed`, and Retry re-runs only those steps. Temporary audio chunks are
 deleted after transcription. If the app stops mid-job, the record is marked failed on the next start and can
 be retried; the upload is kept.
 
@@ -64,6 +79,9 @@ be retried; the upload is kept.
 
 `tests/` uses a fake OpenAI client (`tests/conftest.py`). Coverage includes parser formats and edge cases,
 ffmpeg chunking with generated audio/video, extraction verification rules, Markdown/PDF rendering,
-service lifecycle and persistence, and HTTP routes, auth and uploads. `scripts/evaluate.py` runs the
+service lifecycle and persistence, and HTTP routes, auth and uploads. `tests/test_visuals.py` renders a
+synthetic screen recording with a moving arrow cursor and two slides, and checks view selection, cursor
+tracking, pointing moments, candidate windows, rejection of out-of-window/low-confidence answers, exports,
+screenshot removal and the image route. `scripts/evaluate.py` runs the
 real models on `examples/transcripts/` and scores them against `examples/expectations.json` (expected
 facts, decision counts, and proposals that must not appear as decisions).

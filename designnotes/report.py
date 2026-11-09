@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 
 from designnotes.extraction import SECTIONS
 from designnotes.transcript import format_time, source_label
+from designnotes.visuals import caption
 
 NOT_DISCUSSED = 'Not discussed in transcript.'
 CONTEXT_HEADINGS = [('subject', 'Subject / component'), ('objective', 'Engineering problem / design objective'),
@@ -65,7 +66,8 @@ def item_title(section, item):
     return prefix + item['text'], suffix
 
 
-def render_markdown(record):
+def render_markdown(record, images=None):
+    """images: folder name for screenshot links (zip export); None lists screenshots as text."""
     notes, transcript = record['notes'], record['transcript']
     segments_by_id = {s['id']: s for s in transcript['segments']}
     sections = notes['sections']
@@ -100,7 +102,7 @@ def render_markdown(record):
             for aspect, heading in CONTEXT_HEADINGS:
                 out.append(f'### {heading}')
                 aspect_items = [item for item in items if item['aspect'] == aspect]
-                out += [render_item(key, item, segments_by_id) for item in aspect_items] or [NOT_DISCUSSED]
+                out += [render_item(key, item, segments_by_id, images) for item in aspect_items] or [NOT_DISCUSSED]
                 out.append('')
             out.append('### Participants')
             participants = sections.get('participants', [])
@@ -115,7 +117,7 @@ def render_markdown(record):
         if not items:
             out += [NOT_DISCUSSED, '']
             continue
-        out += [render_item(key, item, segments_by_id) for item in items]
+        out += [render_item(key, item, segments_by_id, images) for item in items]
         out.append('')
 
     cited = list(dict.fromkeys(ref for items in sections.values() for item in items for ref in item.get('source_ids', [])))
@@ -126,9 +128,13 @@ def render_markdown(record):
     return '\n'.join(out)
 
 
-def render_item(section, item, segments_by_id):
+def render_item(section, item, segments_by_id, images=None):
     title, suffix = item_title(section, item)
     lines = [f'- **{title}**{suffix} {references(item, segments_by_id)}'.rstrip()]
     for label, value in item_detail_lines(section, item):
         lines.append(f'  - {label}: {value}')
+    for visual in item.get('visuals') or []:
+        if images:
+            lines.append(f'  - ![{item["id"]} screenshot]({images}/{visual["file"]})')
+        lines.append(f'  - _{caption(visual)}_')
     return '\n'.join(lines)

@@ -1,9 +1,13 @@
 """PDF export of engineering notes, rendered from the same structure as the Markdown notes."""
+import io
+from pathlib import Path
+
 from fpdf import FPDF
 
 from designnotes.extraction import SECTIONS
 from designnotes.report import CONTEXT_HEADINGS, NOT_DISCUSSED, item_detail_lines, item_title, references, render_markdown
 from designnotes.transcript import source_label
+from designnotes.visuals import annotate, caption
 
 REPLACEMENTS = {'\u2018': "'", '\u2019': "'", '\u201c': '"', '\u201d': '"', '\u2013': '-', '\u2014': '-',
                 '\u2212': '-', '\u2026': '...', '\u00b7': '-', '\u2022': '-', '\u2264': '<=', '\u2265': '>=',
@@ -24,7 +28,7 @@ class NotesPDF(FPDF):
         self.cell(0, 8, f'Page {self.page_no()}', align='C')
 
 
-def render_pdf(record):
+def render_pdf(record, visual_dir=None):
     notes, transcript = record['notes'], record['transcript']
     segments_by_id = {s['id']: s for s in transcript['segments']}
     sections = notes['sections']
@@ -62,6 +66,20 @@ def render_pdf(record):
         for label, value in item_detail_lines(section, entry):
             para(f'{label}: {value}', 9, 'I' if label in ('Source quote', 'Verification') else '',
                  150 if label == 'Verification' else 60, indent=4, gap=0.3)
+        for visual in entry.get('visuals') or []:
+            path = Path(visual_dir or '.') / visual['file']
+            if not visual_dir or not path.is_file():
+                continue
+            from PIL import Image
+            with Image.open(path) as picture:
+                aspect = picture.height / picture.width
+            image_width = min(120, width - 4, 150 / aspect)
+            height = image_width * aspect
+            if pdf.get_y() + height > pdf.h - pdf.b_margin:
+                pdf.add_page()
+            pdf.ln(1)
+            pdf.image(io.BytesIO(annotate(path, visual)), x=pdf.l_margin + 4, w=image_width)
+            para(caption(visual), 8, 'I', 80, indent=4, gap=0.3)
         pdf.ln(1.5)
 
     for key, letter, title, _ in SECTIONS:

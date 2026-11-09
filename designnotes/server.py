@@ -19,7 +19,7 @@ STATIC = Path(__file__).resolve().parent / 'static'
 ASSETS = {'/': ('index.html', 'text/html; charset=utf-8'), '/app.js': ('app.js', 'text/javascript; charset=utf-8'),
           '/styles.css': ('styles.css', 'text/css; charset=utf-8')}
 MAX_JSON = 2 * 1024 * 1024
-CSP = ("default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; "
+CSP = ("default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; "
        "frame-ancestors 'none'; base-uri 'none'; form-action 'none'")
 
 
@@ -93,10 +93,13 @@ def handler_factory(service, token, allowed_hosts=None):
                 elif len(parts) == 4 and parts[:2] == ['api', 'notes'] and parts[3] in ('export.md', 'export.pdf'):
                     record = service.snapshot(parts[2])
                     if parts[3] == 'export.md':
-                        self.respond(200, service.export_markdown(parts[2]).encode('utf-8'), 'text/markdown; charset=utf-8',
-                                     safe_filename(record['title'], 'md'))
+                        data, extension = service.export_bundle(parts[2])
+                        mime = 'text/markdown; charset=utf-8' if extension == 'md' else 'application/zip'
+                        self.respond(200, data, mime, safe_filename(record['title'], extension))
                     else:
                         self.respond(200, service.export_pdf(parts[2]), 'application/pdf', safe_filename(record['title'], 'pdf'))
+                elif len(parts) == 5 and parts[:2] == ['api', 'notes'] and parts[3] == 'visuals':
+                    self.respond(200, service.visual_path(parts[2], parts[4]).read_bytes(), 'image/jpeg')
                 else:
                     self.respond(404, {'error': 'Not found.'})
             except KeyError:
@@ -142,7 +145,7 @@ def handler_factory(service, token, allowed_hosts=None):
                     identifier, operation = parts[2], parts[3]
                     if operation == 'edit':
                         service.edit(identifier, body.get('section'), body.get('item_id'), body.get('text'),
-                                     body.get('delete') is True)
+                                     body.get('delete') is True, body.get('remove_visual') is True)
                     elif operation == 'rename':
                         service.rename(identifier, body.get('title'), body.get('project'))
                     elif operation == 'approve':

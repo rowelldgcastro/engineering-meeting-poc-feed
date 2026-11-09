@@ -10,12 +10,23 @@ transcript) after the meeting.
 recording (.m4a/.mp4/...) ──ffmpeg──▶ 16 kHz mono chunks ──Whisper──▶ timestamped transcript segments (S001…)
 transcript (.txt/.md/.docx/.srt/.vtt or pasted) ──parser──────────────▶ transcript segments (S001…)
 segments ──GPT-4o (strict JSON schema)──▶ deterministic verification ──▶ notes A–G ──▶ review / edit / approve ──▶ Markdown / PDF
+video frames ──OpenCV──▶ screenshots + cursor track + pointing moments ──GPT-4o vision──▶ a screenshot per note item
 ```
 
 The notes have seven sections: **A** Engineering Context, **B** Decisions, **C** Design Alternatives,
 **D** Rationale and Trade-offs, **E** Supporting Evidence, **F** Open Issues and Follow-up Actions,
 **G** Lessons Learned. Every item cites transcript segments (`[S014 · 00:03:15 · Alice]`). Click a citation to see
 the transcript excerpt. Sections with nothing supporting them say "Not discussed in transcript".
+
+**Screenshots and cursor position (video uploads).** For `.mp4/.mov/.webm/.mkv` recordings the app also
+captures the screen: a screenshot whenever the shared content changes, the cursor position throughout (found in
+the frames by its arrow shape and motion, since an uploaded file has no cursor telemetry), and *pointing
+moments* where the presenter's cursor came to rest. Each note item is offered only the screenshots and
+pointing moments from when it was discussed (cited speech ±3 s). GPT-4o vision keeps a screenshot only if it
+shows what that item is about. The item then shows the frame from that moment with the cursor marked (red
+ring) and, when the discussed feature is clear, an orange box around it. Answers outside the item's time window
+or with low confidence are discarded. You can remove any screenshot. Markdown export becomes a `.zip`
+(`notes.md` + `images/`), and the PDF includes the images.
 
 ## Requirements
 
@@ -48,7 +59,8 @@ location.
    - Transcripts: `.txt .md .docx .srt .vtt`, up to 20 MB / 250,000 characters.
 2. Optional: add a title, project/component, and a **technical glossary** (part numbers, material grades,
    names). The glossary is passed to Whisper so it spells those terms correctly.
-3. Click **Generate Engineering Notes**. Recordings go through Converting → Transcribing → Extracting.
+3. Click **Generate Engineering Notes**. Recordings go through Converting → Transcribing → (video only:
+   Finding screenshots and cursor movements) → Extracting → (video only: Matching screenshots).
    A 1-hour meeting typically takes a few minutes.
 4. Review the notes. Items marked **needs verification** failed an automatic check. Edit or delete any
    item, click a source tag to read the excerpt, then **Approve**. Editing an approved note returns it to draft.
@@ -85,6 +97,11 @@ Dropped items are listed at the end of the notes, so nothing is discarded silent
 - Recordings and transcripts are sent to OpenAI for processing. Don't upload content your organization
   doesn't allow to be sent to that API.
 - English is assumed for transcription (`language='en'`).
+- **Cursor detection works from pixels.** Standard arrow pointers are tracked by shape. Other pointer shapes
+  (hand, I-beam) are tracked by motion only and are less reliable. If the recording software hides the cursor,
+  screenshots are still matched but carry no cursor position. Screenshot matching sends the screenshots and
+  cursor close-ups to OpenAI (roughly cents per meeting). If it fails, the notes are still produced and
+  **Retry** re-runs only the screenshot steps.
 - Single-user local app: no accounts or sharing. Very long meetings (over ~4 hours of speech) need to be split.
 
 ## Development

@@ -116,11 +116,12 @@ function renderRecord() {
   if (r.project) meta.push('Project/component: ' + r.project);
   meta.push((r.source.filename || 'Pasted transcript') + ' · ' + new Date(r.created_at * 1000).toLocaleString());
   if (r.transcript) meta.push(r.transcript.segments.length + ' transcript segments');
+  if (r.visual_status && r.visual_status.message && ready) meta.push(r.visual_status.message);
   $('notesMeta').textContent = meta.join('  ·  ');
   $('progress').textContent = r.state === 'failed' ? 'Failed: ' + (r.error || '') : (r.progress || r.state) + '…';
   $('progress').className = (r.state === 'failed' ? 'warning' : 'progress') + (ready ? ' hidden' : '');
   for (const id of ['approve', 'exportMd', 'exportPdf', 'editTitle']) $(id).classList.toggle('hidden', !ready);
-  $('retry').classList.toggle('hidden', r.state !== 'failed');
+  $('retry').classList.toggle('hidden', !(r.state === 'failed' || (ready && r.visual_status?.state === 'failed')));
   const approved = ready && r.review.approved_at;
   $('approve').textContent = approved ? 'Withdraw approval' : 'Approve notes';
   $('reviewState').replaceChildren();
@@ -232,6 +233,7 @@ function renderItem(section, item) {
   add('Uncertainty', item.uncertainty);
   flags.forEach(flag => add(flag.level === 'warning' ? 'Check' : 'Note', flag.message, 'flag ' + flag.level));
   if (details.childNodes.length) box.append(details);
+  (item.visuals || []).forEach(visual => box.append(renderVisual(section, item, visual)));
 
   const refs = node('div', undefined, 'refs');
   const segments = Object.fromEntries(record.transcript.segments.map(s => [s.id, s]));
@@ -244,6 +246,60 @@ function renderItem(section, item) {
   });
   box.append(refs);
   return box;
+}
+const imageCache = new Map();
+async function imageUrl(name) {
+  const key = selected + '/' + name;
+  if (!imageCache.has(key)) {
+    const response = await api('/api/notes/' + selected + '/visuals/' + encodeURIComponent(name), undefined, true);
+    imageCache.set(key, URL.createObjectURL(await response.blob()));
+  }
+  return imageCache.get(key);
+}
+function visualCaption(visual) {
+  const parts = ['Screenshot at ' + formatTime(visual.timestamp_s)];
+  if (visual.cursor_source === 'pointing') parts.push('cursor resting here');
+  else if (visual.cursor_norm) parts.push('cursor position');
+  else parts.push('cursor not visible');
+  if (visual.bbox) parts.push('discussed feature boxed');
+  parts.push(visual.confidence + ' confidence');
+  return parts.join(' · ');
+}
+function renderVisual(section, item, visual) {
+  const figure = node('figure', undefined, 'visual');
+  const shot = node('div', undefined, 'shot');
+  shot.title = 'Click to enlarge';
+  const image = node('img');
+  image.alt = 'Screenshot supporting ' + item.id;
+  shot.append(image);
+  imageUrl(visual.file).then(url => { image.src = url; })
+    .catch(() => shot.replaceChildren(node('span', 'Screenshot unavailable.', 'muted small')));
+  const pct = value => (value * 100).toFixed(2) + '%';
+  if (visual.bbox) {
+    const [x0, y0, x1, y1] = visual.bbox, box = node('div', undefined, 'bbox');
+    Object.assign(box.style, {left: pct(x0), top: pct(y0), width: pct(x1 - x0), height: pct(y1 - y0)});
+    shot.append(box);
+  }
+  if (visual.cursor_norm) {
+    const mark = node('div', undefined, 'cursor-mark' + (visual.cursor_source === 'pointing' ? ' pointing' : ''));
+    Object.assign(mark.style, {left: pct(visual.cursor_norm[0]), top: pct(visual.cursor_norm[1])});
+    mark.title = 'Cursor at ' + visual.cursor_norm.map(v => v.toFixed(3)).join(', ');
+    shot.append(mark);
+  }
+  shot.addEventListener('click', () => figure.classList.toggle('expanded'));
+  const caption = node('figcaption');
+  caption.append(node('span', visualCaption(visual), 'visual-meta'));
+  if (visual.rationale) caption.append(node('span', visual.rationale));
+  const remove = node('button', 'Remove screenshot', 'link');
+  remove.type = 'button';
+  remove.addEventListener('click', async () => {
+    if (!confirm('Remove the screenshot from item ' + item.id + '?')) return;
+    try { record = await api('/api/notes/' + selected + '/edit', {section, item_id: item.id, remove_visual: true}); lastSignature = ''; renderRecord(); }
+    catch (error) { showError(error); }
+  });
+  caption.append(remove);
+  figure.append(shot, caption);
+  return figure;
 }
 async function toggleEdit(section, item, body, button) {
   if (body.contentEditable !== 'true') {

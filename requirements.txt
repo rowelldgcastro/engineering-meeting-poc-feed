@@ -1,3 +1,6 @@
 openai==1.107.2
 python-dotenv==1.0.1
 fpdf2==2.8.3
+numpy==2.2.6
+opencv-python-headless==4.10.0.84
+Pillow==11.3.0

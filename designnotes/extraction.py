@@ -19,10 +19,10 @@ import re
 MODEL = os.getenv('DESIGNNOTES_MODEL', 'gpt-4o')
 MAX_ITEMS_PER_SECTION = 60
 MAX_TEXT = 2000
-GAP_MIN_S = 20.0
+GAP_MIN_S = 15.0
 GAP_MIN_SEGMENTS = 4
 COARSE_S = 45.0
-COARSE_SEGMENTS = 8
+COARSE_SEGMENTS = 4
 SCHEMA_VERSION = 1
 
 
@@ -459,15 +459,13 @@ def build_notes(payload, segments, title=None, project=None):
 
 
 def is_coarse(item, segments_by_id):
-    """An item whose citations span so much of the meeting that it summarizes rather than records."""
+    """A context item citing so much of the meeting that it summarizes a walkthrough rather than records it."""
     cited = [segments_by_id[ref] for ref in item.get('source_ids', []) if ref in segments_by_id]
-    if not cited:
+    if 'aspect' not in item or len(cited) < COARSE_SEGMENTS:
         return False
     starts = [s.get('start_s') for s in cited]
     ends = [s.get('end_s') for s in cited]
-    if None in starts or None in ends:
-        return len(cited) >= COARSE_SEGMENTS
-    return max(ends) - min(starts) > COARSE_S
+    return None in starts or None in ends or max(ends) - min(starts) > COARSE_S
 
 
 def uncovered(notes, segments):
@@ -491,8 +489,10 @@ def uncovered(notes, segments):
 
 
 def drop_superseded(notes, segments):
-    """Remove summary items whose every source is also cited by a more specific item, then renumber."""
+    """Remove summary items whose every source is also cited by a more specific item, then renumber
+    in meeting order."""
     by_id = {s['id']: s for s in segments}
+    order = {s['id']: index for index, s in enumerate(segments)}
     sections = notes['sections']
     specific = {ref for items in sections.values() for item in items if not is_coarse(item, by_id)
                 for ref in item.get('source_ids', [])}
@@ -504,6 +504,7 @@ def drop_superseded(notes, segments):
                                          'reason': 'Replaced by more specific items covering the same discussion.'})
             else:
                 kept.append(item)
+        kept.sort(key=lambda item: min((order[ref] for ref in item.get('source_ids', []) if ref in order), default=0))
         for index, item in enumerate(kept, start=1):
             item['id'] = f'{ID_PREFIX[key]}{index}'
         sections[key] = kept

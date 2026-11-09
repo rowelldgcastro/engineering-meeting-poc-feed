@@ -142,10 +142,10 @@ def test_uncited_stretch_gets_a_gap_pass_and_replaces_summary_items():
     first['context'] = [item(text='Walkthrough of the seat structure', quote='seat rail garnish',
                              source_ids=['S002', 'S003', 'S004', 'S005', 'S006'], aspect='design')]
     gap = {key: [] for key in SECTION_KEYS}
-    gap['context'] = [item(text='Front cross member and seat rail garnish', quote='seat rail garnish',
-                           source_ids=['S002', 'S003'], aspect='design'),
-                      item(text='Seat rail, four bolts and floor panel below', quote='floor panel',
-                           source_ids=['S004', 'S005', 'S006'], aspect='design')]
+    gap['context'] = [item(text='Seat rail, four bolts and floor panel below', quote='floor panel',
+                           source_ids=['S004', 'S005', 'S006'], aspect='design'),
+                      item(text='Front cross member and seat rail garnish', quote='seat rail garnish',
+                           source_ids=['S002', 'S003'], aspect='design')]
     client = FakeClient()
     answers = iter([first, gap])
     original = client._create
@@ -171,7 +171,9 @@ def test_remaining_gaps_are_reported(segments):
     assert uncovered(notes, long) == [{'source_ids': ['S002', 'S003', 'S004'], 'start_s': 20.0, 'end_s': 50.0}]
 
 
-def test_short_uncited_tail_is_not_a_gap(segments):
+def test_coverage_threshold(segments):
     from designnotes.extraction import uncovered
     notes = build_notes(sample_payload(), segments)
+    assert [gap['source_ids'] for gap in uncovered(notes, segments)] == [['S004']]
+    segments[3]['end_s'] = 100.0
     assert uncovered(notes, segments) == []

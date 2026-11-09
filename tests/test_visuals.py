@@ -117,12 +117,13 @@ def segments():
             {'id': 'S002', 'start_s': 8.0, 'end_s': 10.0, 'speaker': None, 'text': 'The new one is 75 mm.'}]
 
 
-def grounding_answer(view, pointer, confidence='high', bbox=None):
+def grounding_answer(view, pointer, confidence='high', bbox=None, crop_bbox=None):
     def answer(request):
         text = request['messages'][1]['content'][0]['text']
         items = json.loads(text.split('\n', 1)[1])
         return {'results': [{'item_id': i['item_id'], 'view_id': view(i), 'pointer_id': pointer(i),
-                             'bbox': bbox, 'confidence': confidence, 'rationale': 'Shows the bracket.'} for i in items]}
+                             'crop_bbox': crop_bbox, 'bbox': bbox, 'confidence': confidence,
+                             'rationale': 'Shows the bracket.'} for i in items]}
     return answer
 
 
@@ -305,3 +306,18 @@ def test_http_visual_route_and_zip_export(video, tmp_path):
     finally:
         httpd.shutdown()
         httpd.server_close()
+
+
+def test_crop_box_mapped_to_frame_and_must_contain_cursor():
+    pointer = {'x': 0.5, 'y': 0.5, 'crop': [0.36, 0.3, 0.28, 0.4]}
+    assert grounding.crop_to_frame([0.4, 0.4, 0.6, 0.6], pointer) == [0.472, 0.46, 0.528, 0.54]
+    assert grounding.crop_to_frame([0.0, 0.0, 0.2, 0.2], pointer) is None
+    assert grounding.crop_to_frame(None, pointer) is None
+    found = {'views': ['V01'], 'pointers': [dict(pointer, id='P001', view_id='V01', start_s=1.0, end_s=3.0)],
+             'speech_start': 2.0, 'start': 0.0, 'end': 5.0}
+    result = {'view_id': 'V01', 'pointer_id': 'P001', 'crop_bbox': [0.4, 0.4, 0.6, 0.6],
+              'bbox': [0.1, 0.1, 0.2, 0.2], 'confidence': 'high', 'rationale': 'x'}
+    visual = {'timeline': [[0.0, 'V01']], 'track': []}
+    assert grounding.resolve(result, found, visual)['bbox'] == [0.472, 0.46, 0.528, 0.54]
+    result['crop_bbox'] = None
+    assert grounding.resolve(result, found, visual)['bbox'] == [0.1, 0.1, 0.2, 0.2]

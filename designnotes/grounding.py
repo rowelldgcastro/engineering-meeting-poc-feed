@@ -23,14 +23,18 @@ GROUNDING_SCHEMA = {
     'type': 'object', 'additionalProperties': False, 'required': ['results'],
     'properties': {'results': {'type': 'array', 'items': {
         'type': 'object', 'additionalProperties': False,
-        'required': ['item_id', 'view_id', 'pointer_id', 'bbox', 'confidence', 'rationale'],
+        'required': ['item_id', 'view_id', 'pointer_id', 'crop_bbox', 'bbox', 'confidence', 'rationale'],
         'properties': {
             'item_id': {'type': 'string'},
             'view_id': {'type': ['string', 'null'], 'description': 'Screenshot that shows what the item is about, or null.'},
             'pointer_id': {'type': ['string', 'null'],
                            'description': 'Pointing moment whose cursor is on the discussed feature, or null.'},
+            'crop_bbox': {'anyOf': [{'type': 'array', 'items': {'type': 'number'}}, {'type': 'null'}],
+                          'description': '[x0, y0, x1, y1] in the chosen pointing moment\'s close-up crop (0-1, '
+                                         'top-left origin) around the feature the cursor points at, or null.'},
             'bbox': {'anyOf': [{'type': 'array', 'items': {'type': 'number'}}, {'type': 'null'}],
-                     'description': '[x0, y0, x1, y1] normalized region of the discussed feature, or null.'},
+                     'description': '[x0, y0, x1, y1] normalized to the full screenshot around the discussed '
+                                    'feature, used when no pointing moment is chosen; or null.'},
             'confidence': {'type': 'string', 'enum': ['high', 'medium', 'low']},
             'rationale': {'type': 'string', 'description': 'One sentence: what in the screenshot supports the item.'},
         }}}}}
@@ -48,8 +52,11 @@ Rules:
   support: use null.
 - Choose a pointer_id only if, at that moment, the cursor is on the feature the item discusses. Prefer the
   pointing moment closest to when the item was spoken. A pointer must belong to the chosen screenshot.
-- The cursor marks a point, not a region. Give bbox only when the discussed feature is clearly identifiable in
-  the screenshot, as [x0, y0, x1, y1] normalized to the full frame; otherwise null.
+- Box the discussed feature (part, dimension line, label, value or text) so a reader sees exactly what is meant.
+  With a pointer_id: give crop_bbox, the tightest box around the feature the cursor indicates, in that close-up
+  crop's coordinates (the crop's center is the cursor); include its label if the label is what the item names.
+  Without a pointer_id: give bbox in full-screenshot coordinates. Use null only when no single feature is meant
+  (e.g. the item is about the whole slide).
 - confidence: high = the screenshot clearly shows what the item states; medium = it shows the discussed
   subject but not every detail of the claim; low = weak or doubtful.
 - Use only the ids offered for that item. Return one result per item.'''
@@ -121,7 +128,7 @@ def build_request(items, segments_by_id, visual, frames):
             f'{format_time(pointer["end_s"])}, cursor at ({pointer["x"]:.3f}, {pointer["y"]:.3f}); close-up crop '
             f'of region {pointer["crop"]} with the cursor at its center:')})
         content.append({'type': 'image_url', 'image_url': {'url': data_url(frames / 'pointers' / f'{identifier}.jpg'),
-                                                           'detail': 'low'}})
+                                                           'detail': 'high'}})
     return content
 
 
@@ -145,6 +152,20 @@ def clean_bbox(bbox):
     if x1 - x0 < 0.01 or y1 - y0 < 0.01 or (x1 - x0) * (y1 - y0) > 0.9:
         return None
     return [round(x0, 4), round(y0, 4), round(x1, 4), round(y1, 4)]
+
+
+def crop_to_frame(crop_bbox, pointer):
+    """Map a box in a pointer close-up crop to full-frame coordinates; keep it only if it is at the cursor."""
+    box = clean_bbox(crop_bbox)
+    crop = pointer.get('crop')
+    if box is None or not isinstance(crop, (list, tuple)) or len(crop) != 4:
+        return None
+    x, y, w, h = crop
+    full = [x + box[0] * w, y + box[1] * h, x + box[2] * w, y + box[3] * h]
+    margin = 0.03
+    if not (full[0] - margin <= pointer['x'] <= full[2] + margin and full[1] - margin <= pointer['y'] <= full[3] + margin):
+        return None
+    return clean_bbox(full)
 
 
 def choose_moment(found, view_id, pointer, visual):
@@ -175,7 +196,8 @@ def resolve(result, found, visual):
         cursor = visuals.cursor_at(visual['track'], moment)
         cursor_source = 'tracked' if cursor else None
     return {'view_id': view_id, 'timestamp_s': moment, 'pointer_id': pointer['id'] if pointer else None,
-            'cursor_norm': cursor, 'cursor_source': cursor_source, 'bbox': clean_bbox(result.get('bbox')),
+            'cursor_norm': cursor, 'cursor_source': cursor_source,
+            'bbox': (crop_to_frame(result.get('crop_bbox'), pointer) if pointer else None) or clean_bbox(result.get('bbox')),
             'confidence': result['confidence'], 'rationale': str(result.get('rationale') or '')[:500]}
 
 

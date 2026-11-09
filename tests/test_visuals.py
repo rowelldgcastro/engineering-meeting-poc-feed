@@ -308,18 +308,17 @@ def test_http_visual_route_and_zip_export(video, tmp_path):
         httpd.server_close()
 
 
-def test_grid_cells_mapped_to_frame_and_must_be_specific_and_at_cursor():
-    pointer = {'x': 0.5, 'y': 0.5, 'crop': [0.36, 0.3, 0.28, 0.4]}
-    assert grounding.cells_to_frame(['c3', 'D3'], pointer) == [0.472, 0.46, 0.584, 0.54]
-    assert grounding.cells_to_frame(['A1'], pointer) is None
-    assert grounding.cells_to_frame([f'{c}{r}' for c in 'ABCDE' for r in range(1, 6)], pointer) is None
-    assert grounding.cells_to_frame(['Z9', 'x'], pointer) is None and grounding.cells_to_frame(None, pointer) is None
-    found = {'views': ['V01'], 'pointers': [dict(pointer, id='P001', view_id='V01', start_s=1.0, end_s=3.0)],
+def test_grid_cells_mapped_to_frame():
+    assert grounding.cells_to_frame(['e4', 'F5']) == [0.5, 0.5, 0.75, 0.8333]
+    assert grounding.cells_to_frame([f'{c}{r}' for c in 'ABCDEFGH' for r in range(1, 7)]) is None
+    assert grounding.cells_to_frame(['Z9', 'x', 'A7']) is None and grounding.cells_to_frame(None) is None
+    found = {'views': ['V01'], 'pointers': [{'x': 0.5, 'y': 0.5, 'crop': [0.36, 0.3, 0.28, 0.4], 'id': 'P001',
+                                             'view_id': 'V01', 'start_s': 1.0, 'end_s': 3.0}],
              'speech_start': 2.0, 'start': 0.0, 'end': 5.0}
-    result = {'view_id': 'V01', 'pointer_id': 'P001', 'cells': ['C3'], 'bbox': [0.1, 0.1, 0.2, 0.2],
+    result = {'view_id': 'V01', 'pointer_id': 'P001', 'cells': ['A1'], 'bbox': [0.1, 0.1, 0.2, 0.2],
               'confidence': 'high', 'rationale': 'x'}
     visual = {'timeline': [[0.0, 'V01']], 'track': []}
-    assert grounding.resolve(result, found, visual)['bbox'] == [0.472, 0.46, 0.528, 0.54]
+    assert grounding.resolve(result, found, visual)['bbox'] == [0.0, 0.0, 0.125, 0.1667]
     result['cells'] = None
     assert grounding.resolve(result, found, visual)['bbox'] == [0.1, 0.1, 0.2, 0.2]
     result['bbox'] = [0.1, 0.1, 0.9, 0.9]

@@ -167,11 +167,12 @@ def test_concise_bullets_edit_delete_and_follow_item_deletion(service):
     concise = record['notes']['summary']
     assert concise['topics'][0]['title'] == 'Bracket material' and record['notes']['summary_error'] is None
     service.edit(identifier, 'summary', 'N1', 'Aluminium 6061-T6, 3.2 mm thick')
-    bullet = service.snapshot(identifier)['notes']['summary']['topics'][0]['bullets'][0]
+    n1 = lambda: next(b for b in service.snapshot(identifier)['notes']['summary']['topics'][0]['bullets'] if b['id'] == 'N1')
+    bullet = n1()
     assert bullet['edited'] is True and bullet['text'].startswith('Aluminium')
     service.edit(identifier, 'open_issues', 'O1', delete=True)
     assert service.snapshot(identifier)['notes']['summary']['next_steps'] == []
     service.edit(identifier, 'summary', 'N2', delete=True)
-    assert service.snapshot(identifier)['notes']['summary']['topics'][0]['bullets'][0]['children'] == []
+    assert n1()['children'] == []
     with pytest.raises(ValueError):
         service.edit(identifier, 'summary', 'N99', 'x')

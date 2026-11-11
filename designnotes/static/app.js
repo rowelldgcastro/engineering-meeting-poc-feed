@@ -204,19 +204,17 @@ function setView(next) {
   });
   if (record && record.state === 'ready') renderNotes();
 }
-function* allBullets(concise) {
-  for (const topic of concise.topics) for (const bullet of topic.bullets) { yield bullet; yield* (bullet.children || []); }
-  yield* (concise.next_steps || []);
-}
 function bulletVisuals(concise) {
-  // Same rule as summary.bullet_visuals: each screen moment once, with the first bullet citing it.
+  // Same rule as summary.bullet_visuals: one screenshot per top-level bullet, each screen moment once.
   const items = Object.fromEntries(Object.values(record.notes.sections).flat().map(item => [item.id, item]));
   const moment = v => v.pointer_id || v.view_id + '@' + Math.round(v.timestamp_s || 0);
   const score = v => [!!v.bbox, v.cursor_source === 'pointing', v.confidence === 'high'].map(Number).join('');
   const shown = new Set(), chosen = {};
-  for (const bullet of allBullets(concise)) {
+  const tops = concise.topics.flatMap(topic => topic.bullets).concat(concise.next_steps || []);
+  for (const bullet of tops) {
     if (bullet.visual_hidden) continue;
-    const options = bullet.item_ids.flatMap(id => (items[id] && items[id].visuals) || []).filter(v => !shown.has(moment(v)));
+    const ids = bullet.item_ids.concat(...(bullet.children || []).map(child => child.item_ids));
+    const options = ids.flatMap(id => (items[id] && items[id].visuals) || []).filter(v => !shown.has(moment(v)));
     if (!options.length) continue;
     const best = options.reduce((a, b) => score(b) > score(a) ? b : a);
     shown.add(moment(best)); chosen[bullet.id] = best;

@@ -61,11 +61,15 @@ Rules:
   substance; no filler such as "The meeting discusses", "The design includes", "It was mentioned that".
 - Merge items that repeat each other or belong together into one bullet. Put supporting detail (reasons,
   values, lists of parts shown) in up to 3 short sub-bullets instead of long sentences.
-- Make decisions unmistakable, e.g. "Decided: L reduced from 100 mm to 75 mm". Make unresolved points
-  explicit, e.g. "Open: impact on crash safety".
+- Sub-bullets must add information (a reason, value, part list); never restate the parent bullet.
+- Make decisions unmistakable, e.g. "Decided: L reduced from 100 mm to 75 mm". Current values belong with
+  the decision that changes them.
+- Open questions, investigations and actions go only in next_steps (e.g. "Open: impact on crash safety"),
+  never in a topic, so nothing is said twice.
 - Cite in item_ids every item a bullet or sub-bullet draws on. Every input item must be cited at least once.
 - next_steps: actions, investigations and open questions to follow up, with owner and due date only if
   the items state them. Leave empty if there are none.
+- Before answering, check that every ID in "IDs to cite" appears in some item_ids.
 - Neutral voice. No speaker names unless the items contain them.'''
 
 
@@ -99,8 +103,9 @@ def _details(section, item):
 
 
 def call_model(client, notes, segments_by_id, model=None):
+    entries = items_for_prompt(notes, segments_by_id)
     user = ('Meeting title: ' + json.dumps(notes.get('title')) + '\n\nVerified items (in meeting order where timed):\n' +
-            json.dumps(items_for_prompt(notes, segments_by_id), ensure_ascii=False, indent=1))
+            json.dumps(entries, ensure_ascii=False, indent=1) + '\n\nIDs to cite: ' + ', '.join(e['id'] for e in entries))
     response = client.chat.completions.create(
         model=model or MODEL, temperature=0.2, max_tokens=6000,
         response_format={'type': 'json_schema', 'json_schema': {'name': 'meeting_summary', 'strict': True, 'schema': SCHEMA}},
@@ -146,12 +151,30 @@ def build_summary(payload, notes, segments):
         if bullets:
             topics.append({'title': raw['title'].strip()[:200] or 'Discussion', 'bullets': bullets})
     next_steps = [b for b in (make(r, False) for r in (payload.get('next_steps') or [])[:MAX_BULLETS]) if b]
-    leftover = [item for item_id, (section, item) in items.items() if item_id not in used]
-    if leftover:
-        leftover.sort(key=lambda item: _position(item.get('source_ids', []), order))
-        bullets = [make({'text': item['text'], 'item_ids': [item['id']]}) for item in leftover]
-        topics.append({'title': OTHER_TOPIC, 'bullets': [b for b in bullets if b]})
+    for item_id, (section, item) in items.items():
+        if item_id not in used:
+            _place(make({'text': item['text'], 'item_ids': [item_id]}), topics, order)
     return {'topics': topics, 'next_steps': next_steps}
+
+
+def _place(bullet, topics, order):
+    """Put a bullet for an item the model left out into the topic discussed closest in time, else "Other points"."""
+    if bullet is None:
+        return
+    position = _position(bullet['source_ids'], order)
+    spans = [(min(_position(b['source_ids'], order) for b in t['bullets']),
+              max(_position(b['source_ids'][-1:], order) for b in t['bullets']), t)
+             for t in topics if t['title'] != OTHER_TOPIC and t['bullets']]
+    if position >= len(order) or not spans:
+        target = next((t for t in topics if t['title'] == OTHER_TOPIC), None)
+        if target is None:
+            target = {'title': OTHER_TOPIC, 'bullets': []}
+            topics.append(target)
+        target['bullets'].append(bullet)
+        return
+    _, _, target = min(spans, key=lambda span: 0 if span[0] <= position <= span[1] else min(abs(position - span[0]), abs(position - span[1])))
+    index = next((i for i, b in enumerate(target['bullets']) if _position(b['source_ids'], order) > position), len(target['bullets']))
+    target['bullets'].insert(index, bullet)
 
 
 def _position(source_ids, order):
@@ -207,14 +230,16 @@ def find_bullet(summary, bullet_id):
 
 
 def bullet_visuals(summary, notes):
-    """Map bullet ID -> the screenshot to show with it. Each screen moment is shown once, with the first
-    bullet that cites it; a boxed or pointed-at frame is preferred."""
+    """Map top-level bullet ID -> the one screenshot shown with it (drawn from the bullet and its sub-bullets).
+    Each screen moment is shown once; a boxed or pointed-at frame is preferred."""
     items = {item['id']: item for section in ITEM_SECTIONS for item in notes['sections'].get(section, [])}
     shown, chosen = set(), {}
-    for bullet in all_bullets(summary):
+    tops = [b for topic in summary.get('topics', []) for b in topic['bullets']] + list(summary.get('next_steps', []))
+    for bullet in tops:
         if bullet.get('visual_hidden'):
             continue
-        options = [v for i in bullet['item_ids'] if i in items for v in items[i].get('visuals') or []]
+        ids = bullet['item_ids'] + [i for child in bullet.get('children', []) for i in child['item_ids']]
+        options = [v for i in ids if i in items for v in items[i].get('visuals') or []]
         options = [v for v in options if _moment(v) not in shown]
         if not options:
             continue

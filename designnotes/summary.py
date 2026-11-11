@@ -28,7 +28,7 @@ def _bullet(description, children=True):
                   'item_ids': {'type': 'array', 'items': {'type': 'string'},
                                'description': 'IDs of every input item this bullet draws on, e.g. ["C4", "D1"].'}}
     if children:
-        properties['sub_bullets'] = {'type': 'array', 'items': _bullet('Supporting detail: reason, value, part list.', False)}
+        properties['sub_bullets'] = {'type': 'array', 'items': _bullet('Supporting detail (reason, value, parts shown) as a short, self-explanatory sentence.', False)}
     return {'type': 'object', 'additionalProperties': False, 'properties': properties, 'required': list(properties)}
 
 
@@ -38,7 +38,7 @@ SCHEMA = {
         'topics': {'type': 'array', 'items': {
             'type': 'object', 'additionalProperties': False,
             'properties': {'title': {'type': 'string', 'description': 'Short noun phrase naming what was discussed.'},
-                           'bullets': {'type': 'array', 'items': _bullet('One concise point, ideally under 15 words.')}},
+                           'bullets': {'type': 'array', 'items': _bullet('One clear point in a complete sentence of about 10-25 words that names what it is about.')}},
             'required': ['title', 'bullets']}},
         'next_steps': {'type': 'array', 'items': _bullet('Action, investigation or open question to follow up.', False)},
     },
@@ -57,14 +57,23 @@ Rules:
 - Group the content into topics that follow the flow of the meeting (normally 3-6). Topic titles are
   short noun phrases naming the subject, e.g. "Seat bracket assembly", "L dimension change". Never use
   generic titles such as "Decisions", "Discussion", "Context" or "Summary".
-- 1-5 bullets per topic. One idea per bullet, ideally under 15 words, telegraphic. Start with the
-  substance; no filler such as "The meeting discusses", "The design includes", "It was mentioned that".
+- 1-5 bullets per topic. One idea per bullet, written as a clear, complete sentence of about 10-25 words.
+  Start with the substance; no filler such as "The meeting discusses", "It was mentioned that".
+- Every bullet and sub-bullet must make sense on its own to an engineer who missed the meeting. Name its
+  subject explicitly (which part, view, section, dimension or document) instead of "it", "this" or a bare
+  verb, and say what about it matters (what it is, what changed, why, or what it is for). Expand vague
+  references using the items, e.g. "Includes base plate, gusset" becomes "The exploded view of the pump
+  mount shows the base plate and the side gusset".
 - Merge items that repeat each other or belong together into one bullet. Put supporting detail (reasons,
   values, lists of parts shown) in up to 3 short sub-bullets instead of long sentences.
 - Cite each item in one bullet only; say each point once, in the topic where it was discussed.
-- Sub-bullets must add information (a reason, value, part list); never restate the parent bullet.
-- Make decisions unmistakable, e.g. "Decided: L reduced from 100 mm to 75 mm". Current values belong with
+- Sub-bullets must add information (a reason, value, part list); never restate the parent bullet. A part
+  list says what the parts belong to or where they are, e.g. "Section A-A shows the bolt, washer and
+  weld nut joining the gusset to the frame".
+- Make decisions unmistakable and say what they apply to, plus the reason only if the items state one,
+  e.g. "Decided: reduce the mounting bracket length L from 100 mm to 75 mm". Current values belong with
   the decision that changes them.
+- Keep the notes concise overall: clearer, not longer. Do not pad bullets or repeat context.
 - Open questions, investigations and actions go only in next_steps (e.g. "Open: impact on crash safety"),
   never in a topic, so nothing is said twice.
 - Cite in item_ids every item a bullet or sub-bullet draws on. Every input item must be cited at least once.

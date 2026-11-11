@@ -5,7 +5,9 @@ from pathlib import Path
 from fpdf import FPDF
 
 from designnotes.extraction import SECTIONS
-from designnotes.report import CONTEXT_HEADINGS, gap_label, NOT_DISCUSSED, item_detail_lines, item_title, references, render_markdown
+from designnotes.report import (CONTEXT_HEADINGS, gap_label, NOT_DISCUSSED, bullet_markers, item_detail_lines, item_title,
+                               references, render_markdown, time_span)
+from designnotes.summary import bullet_visuals
 from designnotes.transcript import source_label
 from designnotes.visuals import annotate, caption, close_up
 
@@ -52,6 +54,66 @@ def render_pdf(record, visual_dir=None):
         if line.startswith('**'):
             para(line.replace('**', '').rstrip(), 9, '', 70, gap=0.5)
     pdf.ln(2)
+
+    def figure(path, visual, indent):
+        """Annotated screenshot, with the close-up of the boxed area beside it when there is one."""
+        from PIL import Image
+        with Image.open(path) as picture:
+            aspect = picture.height / picture.width
+        detail = close_up(path, visual)
+        available = width - indent
+        if detail:
+            with Image.open(io.BytesIO(detail)) as picture:
+                detail_aspect = picture.height / picture.width
+            shot_width = min(available * 0.62, 95 / aspect)
+            height = shot_width * aspect
+            detail_width = min(available - shot_width - 3, height / detail_aspect)
+            height = max(height, detail_width * detail_aspect)
+        else:
+            shot_width = min(available, 110 / aspect)
+            height = shot_width * aspect
+        if pdf.get_y() + height + 8 > pdf.h - pdf.b_margin:
+            pdf.add_page()
+        pdf.ln(1)
+        top = pdf.get_y()
+        pdf.image(io.BytesIO(annotate(path, visual)), x=pdf.l_margin + indent, y=top, w=shot_width)
+        if detail:
+            pdf.image(io.BytesIO(detail), x=pdf.l_margin + indent + shot_width + 3, y=top, w=detail_width)
+        pdf.set_y(top + height + 1)
+        para(caption(visual) + (' Right: close-up of the boxed area.' if detail else ''), 8, 'I', 80, indent=indent, gap=0.3)
+
+    concise = notes.get('summary')
+    if concise:
+        visuals = bullet_visuals(concise, notes)
+
+        def bullet(entry, indent=0):
+            markers = bullet_markers(entry)
+            span = time_span(entry, segments_by_id)
+            text = '- ' + entry['text'] + (f'  [{span}]' if span else '')
+            text += f' ({", ".join(markers)})' if markers else ''
+            para(text, 10.5 if not indent else 9.5, '', 25 if not indent else 50, indent=indent, gap=0.8)
+            for child in entry.get('children', []):
+                bullet(child, indent + 6)
+            visual = visuals.get(entry['id'])
+            path = Path(visual_dir or '.') / visual['file'] if visual else None
+            if visual and visual_dir and path.is_file():
+                figure(path, visual, indent + 4)
+                pdf.ln(1.5)
+
+        para('Times in brackets point to the meeting recording. The detailed engineering record that follows lists '
+             'every verified item with its source quote.', 8, 'I', 90, gap=3)
+        for topic in concise['topics']:
+            pdf.ln(1.5)
+            para(topic['title'], 13, 'B', 25, gap=1.2)
+            for entry in topic['bullets']:
+                bullet(entry)
+        if concise.get('next_steps'):
+            pdf.ln(1.5)
+            para('Next steps', 13, 'B', 25, gap=1.2)
+            for entry in concise['next_steps']:
+                bullet(entry)
+        pdf.add_page()
+        para('Detailed engineering record', 15, 'B', 20, gap=2)
     para('Source tags such as [S014 - 00:03:15 - Alice] point to transcript segments in the appendix. '
          '"Interpretation" marks model readings; "needs verification" marks items that failed an automatic check.',
          8, 'I', 90, gap=3)
@@ -66,30 +128,10 @@ def render_pdf(record, visual_dir=None):
         for label, value in item_detail_lines(section, entry):
             para(f'{label}: {value}', 9, 'I' if label in ('Source quote', 'Verification') else '',
                  150 if label == 'Verification' else 60, indent=4, gap=0.3)
-        for visual in entry.get('visuals') or []:
+        for visual in [] if concise else entry.get('visuals') or []:
             path = Path(visual_dir or '.') / visual['file']
-            if not visual_dir or not path.is_file():
-                continue
-            from PIL import Image
-            with Image.open(path) as picture:
-                aspect = picture.height / picture.width
-            image_width = min(width - 4, 120 / aspect)
-            height = image_width * aspect
-            if pdf.get_y() + height > pdf.h - pdf.b_margin:
-                pdf.add_page()
-            pdf.ln(1)
-            pdf.image(io.BytesIO(annotate(path, visual)), x=pdf.l_margin + 4, w=image_width)
-            para(caption(visual), 8, 'I', 80, indent=4, gap=0.3)
-            detail = close_up(path, visual)
-            if detail:
-                with Image.open(io.BytesIO(detail)) as picture:
-                    aspect = picture.height / picture.width
-                detail_width = min(width - 4, 100 / aspect, 120)
-                if pdf.get_y() + detail_width * aspect + 6 > pdf.h - pdf.b_margin:
-                    pdf.add_page()
-                pdf.ln(1)
-                pdf.image(io.BytesIO(detail), x=pdf.l_margin + 4, w=detail_width)
-                para('Close-up of the boxed area', 8, 'I', 80, indent=4, gap=0.3)
+            if visual_dir and path.is_file():
+                figure(path, visual, 4)
         pdf.ln(1.5)
 
     for key, letter, title, _ in SECTIONS:

@@ -11,14 +11,14 @@ import time
 import uuid
 from pathlib import Path
 
-from designnotes import extraction, grounding, media, visuals
+from designnotes import extraction, grounding, media, summary, visuals
 from designnotes.pdf import render_pdf
 from designnotes.report import render_markdown
 from designnotes.transcript import SUPPORTED_TEXT_EXTENSIONS, TranscriptError, parse_transcript, read_upload
 
 MAX_UPLOAD_BYTES = 2 * 1024 ** 3
 MAX_TRANSCRIPT_UPLOAD_BYTES = 20 * 1024 ** 2
-ACTIVE_STATES = ('queued', 'transcribing', 'analyzing', 'extracting', 'matching')
+ACTIVE_STATES = ('queued', 'transcribing', 'analyzing', 'extracting', 'matching', 'summarizing')
 
 
 def default_root():
@@ -231,6 +231,8 @@ class NotesService:
             if record.get('visual') and record['visual'].get('views'):
                 self._update(record, state='matching', progress='Matching screenshots and cursor positions to notes')
                 usage['grounding'] = self.match_visuals(client, record, notes, directory)
+            self._update(record, state='summarizing', progress='Writing concise meeting notes')
+            usage['summary'] = self.summarize(client, record, notes, directory)
             self._update(record, notes=notes, usage=usage, state='ready', progress='Ready for review',
                          review={'approved_at': None, 'edited_at': None})
         except (TranscriptError, extraction.ExtractionError, ValueError) as error:
@@ -278,6 +280,19 @@ class NotesService:
             record['visual_status'] = {'state': 'failed', 'message': f'Screenshot matching failed ({detail}). Use Retry to try again.'}
             return {}
 
+    def summarize(self, client, record, notes, directory):
+        """Concise topic notes on top of the verified items. A failure keeps the detailed notes."""
+        try:
+            notes['summary'], raw, usage = summary.summarize(client, notes, record['transcript'])
+            (directory / 'summary_response.json').write_text(raw, encoding='utf-8')
+            notes['summary_error'] = None
+            return usage
+        except Exception as error:
+            notes['summary'] = None
+            detail = str(error) if isinstance(error, extraction.ExtractionError) else type(error).__name__
+            notes['summary_error'] = f'Concise notes could not be written ({detail}); showing the detailed record.'
+            return {}
+
     def retry(self, identifier):
         with self.lock:
             record = self.get(identifier)
@@ -303,6 +318,11 @@ class NotesService:
     def edit(self, identifier, section, item_id, text=None, delete=False, remove_visual=False):
         with self.lock:
             record = self._ready(identifier)
+            if section == 'summary':
+                self._edit_bullet(record, item_id, text, delete, remove_visual)
+                record['review'] = {'approved_at': None, 'edited_at': time.time()}
+                self.save(record)
+                return
             items = record['notes']['sections'].get(section)
             if items is None:
                 raise ValueError('Unknown section.')
@@ -311,6 +331,7 @@ class NotesService:
                 raise ValueError('Unknown item.')
             if delete:
                 items.remove(matches[0])
+                self._forget_item(record, item_id)
             elif remove_visual:
                 if not matches[0].get('visuals'):
                     raise ValueError('This item has no screenshot.')
@@ -324,6 +345,53 @@ class NotesService:
                     matches[0]['edited'] = True
             record['review'] = {'approved_at': None, 'edited_at': time.time()}
             self.save(record)
+
+    def _summary_context(self, record):
+        notes, segments = record['notes'], record['transcript']['segments']
+        items = {item['id']: (key, item) for key in summary.ITEM_SECTIONS for item in notes['sections'].get(key, [])}
+        return items, {s['id']: s for s in segments}, {s['id']: i for i, s in enumerate(segments)}
+
+    def _edit_bullet(self, record, bullet_id, text, delete, remove_visual):
+        notes = record['notes']
+        container, bullet = summary.find_bullet(notes.get('summary') or {}, bullet_id)
+        if bullet is None:
+            raise ValueError('Unknown item.')
+        if delete:
+            container.remove(bullet)
+            notes['summary']['topics'] = [t for t in notes['summary']['topics'] if t['bullets']]
+        elif remove_visual:
+            if bullet_id not in summary.bullet_visuals(notes['summary'], notes):
+                raise ValueError('This item has no screenshot.')
+            bullet['visual_hidden'] = True
+            bullet['edited'] = True
+        else:
+            value = clean_field(text, 'Item text', extraction.MAX_TEXT, required=True)
+            if value != bullet['text']:
+                bullet['text'] = value
+                bullet['edited'] = True
+                summary.refresh(bullet, *self._summary_context(record))
+
+    def _forget_item(self, record, item_id):
+        """A deleted item no longer supports concise bullets; bullets left with no support are removed."""
+        notes = record['notes']
+        if not notes.get('summary'):
+            return
+        context = self._summary_context(record)
+
+        def keep(bullets):
+            kept = []
+            for bullet in bullets:
+                bullet['children'] = keep(bullet.get('children', []))
+                if item_id in bullet['item_ids']:
+                    bullet['item_ids'].remove(item_id)
+                    summary.refresh(bullet, *context)
+                if bullet['item_ids'] or bullet['children']:
+                    kept.append(bullet)
+            return kept
+        for topic in notes['summary']['topics']:
+            topic['bullets'] = keep(topic['bullets'])
+        notes['summary']['topics'] = [t for t in notes['summary']['topics'] if t['bullets']]
+        notes['summary']['next_steps'] = keep(notes['summary'].get('next_steps', []))
 
     def rename(self, identifier, title, project=None):
         with self.lock:

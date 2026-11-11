@@ -159,3 +159,19 @@ def test_http_recording_upload(server, service, tmp_path):
     assert record['source']['kind'] == 'recording' and record['transcript']['format'] == 'recording'
     assert record['transcript']['segments'][0]['text'] == 'We will use the 3.2 mm aluminium bracket.'
     assert not (service.directory(body['id']) / 'audio').exists()
+
+
+def test_concise_bullets_edit_delete_and_follow_item_deletion(service):
+    identifier = service.create_from_text(TRANSCRIPT, 'Review', 'P-200')
+    record = wait_ready(service, identifier)
+    concise = record['notes']['summary']
+    assert concise['topics'][0]['title'] == 'Bracket material' and record['notes']['summary_error'] is None
+    service.edit(identifier, 'summary', 'N1', 'Aluminium 6061-T6, 3.2 mm thick')
+    bullet = service.snapshot(identifier)['notes']['summary']['topics'][0]['bullets'][0]
+    assert bullet['edited'] is True and bullet['text'].startswith('Aluminium')
+    service.edit(identifier, 'open_issues', 'O1', delete=True)
+    assert service.snapshot(identifier)['notes']['summary']['next_steps'] == []
+    service.edit(identifier, 'summary', 'N2', delete=True)
+    assert service.snapshot(identifier)['notes']['summary']['topics'][0]['bullets'][0]['children'] == []
+    with pytest.raises(ValueError):
+        service.edit(identifier, 'summary', 'N99', 'x')

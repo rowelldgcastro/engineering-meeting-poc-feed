@@ -2,6 +2,7 @@
 from datetime import datetime, timezone
 
 from designnotes.extraction import SECTIONS
+from designnotes.summary import bullet_visuals
 from designnotes.transcript import format_time, source_label
 from designnotes.visuals import caption
 
@@ -90,9 +91,19 @@ def render_markdown(record, images=None):
     else:
         meta.append('**Status:** Draft - not yet reviewed')
     out.append('  \n'.join(meta))
-    out += ['', '> Generated from the meeting transcript. Source tags such as `[S014 · 00:03:15 · Alice]` point to '
-                'transcript segments listed in the appendix. Items marked _interpretation_ are model readings rather '
-                'than explicit statements; items marked _needs verification_ failed an automatic check.', '']
+    concise = notes.get('summary')
+    if concise:
+        out += ['', '> Concise notes first; times point to the meeting recording/transcript. The detailed engineering '
+                    'record below lists every verified item with its source quote.', '']
+        out += render_summary(concise, notes, segments_by_id, images)
+        out += ['---', '', '# Detailed engineering record', '']
+    else:
+        out.append('')
+    out += ['> Generated from the meeting transcript. Source tags such as `[S014 · 00:03:15 · Alice]` point to '
+            'transcript segments listed in the appendix. Items marked _interpretation_ are model readings rather '
+            'than explicit statements; items marked _needs verification_ failed an automatic check.', '']
+    item_images = None if concise else images
+    show_visuals = not concise
 
     for key, letter, title, _ in SECTIONS:
         out.append(f'## {letter}. {title}')
@@ -102,7 +113,7 @@ def render_markdown(record, images=None):
             for aspect, heading in CONTEXT_HEADINGS:
                 out.append(f'### {heading}')
                 aspect_items = [item for item in items if item['aspect'] == aspect]
-                out += [render_item(key, item, segments_by_id, images) for item in aspect_items] or [NOT_DISCUSSED]
+                out += [render_item(key, item, segments_by_id, item_images, show_visuals) for item in aspect_items] or [NOT_DISCUSSED]
                 out.append('')
             out.append('### Participants')
             participants = sections.get('participants', [])
@@ -117,7 +128,7 @@ def render_markdown(record, images=None):
         if not items:
             out += [NOT_DISCUSSED, '']
             continue
-        out += [render_item(key, item, segments_by_id, images) for item in items]
+        out += [render_item(key, item, segments_by_id, item_images, show_visuals) for item in items]
         out.append('')
 
     gaps = notes.get('coverage_gaps') or []
@@ -142,12 +153,65 @@ def gap_label(gap):
     return span
 
 
-def render_item(section, item, segments_by_id, images=None):
+def time_span(entry, segments_by_id):
+    """Compact reference for a concise bullet: its time range, or the segment IDs without timestamps."""
+    cited = [segments_by_id[r] for r in entry.get('source_ids', []) if r in segments_by_id]
+    if not cited:
+        return ''
+    starts = [s['start_s'] for s in cited if s.get('start_s') is not None]
+    if not starts:
+        return cited[0]['id'] if len(cited) == 1 else f'{cited[0]["id"]}-{cited[-1]["id"]}'
+    first, last = format_time(min(starts)), format_time(max(starts))
+    return first if first == last else f'{first}-{last}'
+
+
+def bullet_markers(bullet):
+    markers = []
+    if bullet.get('edited'):
+        markers.append('edited by reviewer')
+    if any(flag['level'] == 'warning' for flag in bullet.get('flags', [])):
+        markers.append('needs verification')
+    return markers
+
+
+def render_summary(concise, notes, segments_by_id, images=None):
+    visuals = bullet_visuals(concise, notes)
+    out = []
+
+    def bullet_lines(bullet, indent=''):
+        markers = bullet_markers(bullet)
+        span = time_span(bullet, segments_by_id)
+        line = f'{indent}- {bullet["text"]}' + (f' `{span}`' if span else '')
+        line += f' _({", ".join(markers)})_' if markers else ''
+        lines = [line]
+        for child in bullet.get('children', []):
+            lines += bullet_lines(child, indent + '  ')
+        visual = visuals.get(bullet['id'])
+        if visual:
+            if images:
+                lines.append(f'{indent}  ![screenshot]({images}/{visual["file"]})')
+            lines.append(f'{indent}  _{caption(visual)}_')
+        return lines
+
+    for topic in concise['topics']:
+        out += [f'## {topic["title"]}', '']
+        for bullet in topic['bullets']:
+            out += bullet_lines(bullet)
+        out.append('')
+    if concise.get('next_steps'):
+        out += ['## Next steps', '']
+        for bullet in concise['next_steps']:
+            out += bullet_lines(bullet)
+        out.append('')
+    return out
+
+
+def render_item(section, item, segments_by_id, images=None, show_visuals=True):
     title, suffix = item_title(section, item)
     lines = [f'- **{title}**{suffix} {references(item, segments_by_id)}'.rstrip()]
     for label, value in item_detail_lines(section, item):
         lines.append(f'  - {label}: {value}')
-    for visual in item.get('visuals') or []:
+    for visual in (item.get('visuals') or []) if show_visuals else []:
         if images:
             lines.append(f'  - ![{item["id"]} screenshot]({images}/{visual["file"]})')
         lines.append(f'  - _{caption(visual)}_')

@@ -13,6 +13,7 @@ are `openai`, `fpdf2` and `python-dotenv`.
 | `visuals.py` | Video analysis (OpenCV on ffmpeg-decoded frames at 4 fps): view (screenshot) selection by fingerprint change, cursor tracking by arrow-template matching and motion, pointing moments (cursor at rest ≥ 0.75 s), frame extraction, export annotation | `media.ffmpeg_path` |
 | `grounding.py` | Per-item candidate screenshots/pointing moments from the cited speech window (±3 s), GPT-4.1 vision call with strict schema (feature boxes as cells of a labeled grid on the screenshot), validation of answers against candidates (a box must contain the pointed spot), frame capture at the chosen moment | `visuals` |
 | `extraction.py` | Prompt, strict JSON schema, model call, deterministic verification (`build_notes`) | none (client passed in) |
+| `summary.py` | Concise Granola-style notes: topics with short bullets rewritten from the verified items; each bullet cites item IDs (sources and screenshots come from them), new numbers are flagged, uncited items go under "Other points" | `extraction` helpers |
 | `report.py` | Markdown rendering | `transcript.source_label` |
 | `pdf.py` | PDF rendering (`fpdf2`), same content as Markdown | `report` helpers |
 | `service.py` | Notes records, persistence, upload validation, job queue, review/edit/approve/export | all of the above |
@@ -48,7 +49,7 @@ Section-specific fields: context `aspect` (subject/objective/design/background);
 "needs verification".
 
 Record on disk (`<data-dir>/<32-hex id>/record.json`) holds the title, project, glossary, source
-metadata, state (`queued → transcribing → analyzing → extracting → matching → ready | failed`), progress text, error,
+metadata, state (`queued → transcribing → analyzing → extracting → matching → summarizing → ready | failed`), progress text, error,
 transcript, `visual` (analysis: `views`, `timeline`, `pointers`, `track`, `cursor`), `visual_status`, notes and
 review (`approved_at`, `edited_at`). The folder also keeps `source.<ext>` (the original upload),
 `model_response.json` / `grounding_response.json` (raw model output, for auditing), `frames/views/V01.jpg…`,

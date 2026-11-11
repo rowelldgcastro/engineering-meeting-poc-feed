@@ -2,7 +2,7 @@
 const $ = id => document.getElementById(id);
 const token = location.hash.slice(1) || sessionStorage.getItem('designNotesToken') || '';
 if (location.hash) { sessionStorage.setItem('designNotesToken', token); history.replaceState(null, '', '/'); }
-let status = null, selected = null, record = null, mode = 'upload', file = null, lastSignature = '', activeRef = null, poller = null;
+let view = 'summary', status = null, selected = null, record = null, mode = 'upload', file = null, lastSignature = '', activeRef = null, poller = null;
 
 function node(tag, text, className) {
   const el = document.createElement(tag);
@@ -138,6 +138,7 @@ function renderRecord() {
     if (gaps.length) warnings.push('No notes cite these parts of the meeting: ' + gaps.map(g => g.start_s == null
       ? g.source_ids[0] + '-' + g.source_ids[g.source_ids.length - 1]
       : formatTime(g.start_s) + '-' + formatTime(g.end_s)).join(', ') + '. Check the transcript there.');
+    if (r.notes.summary_error) warnings.push(r.notes.summary_error);
     if (stats.dropped) warnings.push(stats.dropped + ' extracted item(s) were discarded because no supporting transcript text was found.');
   }
   $('warnings').textContent = warnings.join('\n');
@@ -165,6 +166,9 @@ function renderNotes() {
     container.append(node('div', record.state === 'failed' ? 'No notes were generated.' : 'Notes will appear here when processing finishes.', 'card muted'));
     return;
   }
+  const concise = record.notes.summary;
+  $('viewTabs').classList.toggle('hidden', !concise);
+  if (concise && view === 'summary') { container.append(renderSummary(concise)); return; }
   const sections = record.notes.sections;
   status.sections.forEach(section => {
     const card = node('section', undefined, 'card section');
@@ -192,6 +196,85 @@ function renderNotes() {
     record.notes.dropped.forEach(d => card.append(node('p', d.section + ': ' + (d.text || '') + ' — ' + d.reason, 'muted')));
     container.append(card);
   }
+}
+function setView(next) {
+  view = next;
+  [['viewSummary', 'summary'], ['viewDetailed', 'detailed']].forEach(([id, value]) => {
+    $(id).classList.toggle('active', view === value); $(id).setAttribute('aria-selected', String(view === value));
+  });
+  if (record && record.state === 'ready') renderNotes();
+}
+function* allBullets(concise) {
+  for (const topic of concise.topics) for (const bullet of topic.bullets) { yield bullet; yield* (bullet.children || []); }
+  yield* (concise.next_steps || []);
+}
+function bulletVisuals(concise) {
+  // Same rule as summary.bullet_visuals: each screen moment once, with the first bullet citing it.
+  const items = Object.fromEntries(Object.values(record.notes.sections).flat().map(item => [item.id, item]));
+  const moment = v => v.pointer_id || v.view_id + '@' + Math.round(v.timestamp_s || 0);
+  const score = v => [!!v.bbox, v.cursor_source === 'pointing', v.confidence === 'high'].map(Number).join('');
+  const shown = new Set(), chosen = {};
+  for (const bullet of allBullets(concise)) {
+    if (bullet.visual_hidden) continue;
+    const options = bullet.item_ids.flatMap(id => (items[id] && items[id].visuals) || []).filter(v => !shown.has(moment(v)));
+    if (!options.length) continue;
+    const best = options.reduce((a, b) => score(b) > score(a) ? b : a);
+    shown.add(moment(best)); chosen[bullet.id] = best;
+  }
+  return chosen;
+}
+function timeSpan(bullet) {
+  const segments = Object.fromEntries(record.transcript.segments.map(s => [s.id, s]));
+  const cited = (bullet.source_ids || []).map(id => segments[id]).filter(Boolean);
+  if (!cited.length) return '';
+  const starts = cited.map(s => s.start_s).filter(v => v !== null && v !== undefined);
+  if (!starts.length) return cited.length > 1 ? cited[0].id + '–' + cited[cited.length - 1].id : cited[0].id;
+  const first = formatTime(Math.min(...starts)), last = formatTime(Math.max(...starts));
+  return first === last ? first : first + '–' + last;
+}
+function renderSummary(concise) {
+  const card = node('section', undefined, 'card concise');
+  const visuals = bulletVisuals(concise);
+  const list = bullets => { const ul = node('ul'); bullets.forEach(b => ul.append(renderBullet(b, visuals))); return ul; };
+  concise.topics.forEach(topic => { card.append(node('h2', topic.title), list(topic.bullets)); });
+  if ((concise.next_steps || []).length) card.append(node('h2', 'Next steps'), list(concise.next_steps));
+  card.append(node('p', 'Times open the supporting transcript. Every bullet is built from verified items in the detailed record.', 'muted small'));
+  return card;
+}
+function renderBullet(bullet, visuals) {
+  const li = node('li', undefined, 'bullet' + ((bullet.flags || []).some(f => f.level === 'warning') ? ' flagged' : ''));
+  li.dataset.item = bullet.id;
+  const row = node('div', undefined, 'bullet-row');
+  const body = node('span', bullet.text, 'bullet-text');
+  row.append(body);
+  const span = timeSpan(bullet);
+  if (span) {
+    const chip = node('button', span, 'ref time');
+    chip.type = 'button'; chip.title = 'Show transcript excerpt';
+    chip.addEventListener('click', () => showSource(bullet, bullet.source_ids[0]));
+    row.append(chip);
+  }
+  if (bullet.edited) row.append(node('span', 'edited', 'badge edited'));
+  (bullet.flags || []).filter(f => f.level === 'warning').forEach(flag => {
+    const badge = node('span', 'needs verification', 'badge warn'); badge.title = flag.message; row.append(badge);
+  });
+  const tools = node('span', undefined, 'bullet-tools');
+  const edit = node('button', 'Edit'), remove = node('button', 'Delete');
+  edit.type = remove.type = 'button';
+  edit.addEventListener('click', () => toggleEdit('summary', bullet, body, edit).catch(showError));
+  remove.addEventListener('click', async () => {
+    if (!confirm('Delete this bullet from the notes?')) return;
+    try { record = await api('/api/notes/' + selected + '/edit', {section: 'summary', item_id: bullet.id, delete: true}); lastSignature = ''; renderRecord(); }
+    catch (error) { showError(error); }
+  });
+  tools.append(edit, remove);
+  row.append(tools);
+  li.append(row);
+  if ((bullet.children || []).length) {
+    const ul = node('ul'); bullet.children.forEach(child => ul.append(renderBullet(child, visuals))); li.append(ul);
+  }
+  if (visuals[bullet.id]) li.append(renderVisual('summary', bullet, visuals[bullet.id]));
+  return li;
 }
 function renderItem(section, item) {
   const flags = item.flags || [], warn = flags.some(f => f.level === 'warning');
@@ -316,7 +399,7 @@ async function toggleEdit(section, item, body, button) {
   lastSignature = ''; renderRecord(); refreshList();
 }
 function showSource(item, ref) {
-  document.querySelectorAll('.item.focus').forEach(el => el.classList.remove('focus'));
+  document.querySelectorAll('.focus').forEach(el => el.classList.remove('focus'));
   document.querySelectorAll('.ref.active').forEach(el => el.classList.remove('active'));
   const box = document.querySelector('[data-item="' + item.id + '"]');
   if (box) { box.classList.add('focus'); [...box.querySelectorAll('.ref')].forEach(b => { if (b.textContent.startsWith(ref)) b.classList.add('active'); }); }
@@ -352,6 +435,8 @@ async function download(kind) {
 // ---------------------------------------------------------------- wiring
 $('tabUpload').addEventListener('click', () => setMode('upload'));
 $('tabPaste').addEventListener('click', () => setMode('paste'));
+$('viewSummary').addEventListener('click', () => setView('summary'));
+$('viewDetailed').addEventListener('click', () => setView('detailed'));
 $('file').addEventListener('change', () => setFile($('file').files[0]));
 const drop = $('dropZone');
 ['dragenter', 'dragover'].forEach(type => drop.addEventListener(type, event => { event.preventDefault(); drop.classList.add('over'); }));

@@ -41,9 +41,17 @@ def sample_payload():
     }
 
 
+def sample_summary():
+    return {'topics': [{'title': 'Bracket material', 'bullets': [
+        {'text': 'Decided: 6061-T6 aluminium at 3.2 mm', 'item_ids': ['D1', 'A1'],
+         'sub_bullets': [{'text': 'Weight prioritized over cost', 'item_ids': ['R1']}]}]}],
+        'next_steps': [{'text': 'Alice to run FEA fatigue check by Friday', 'item_ids': ['O1']}]}
+
+
 class FakeClient:
-    def __init__(self, payload=None, finish_reason='stop', segments=None, grounding=None):
+    def __init__(self, payload=None, finish_reason='stop', segments=None, grounding=None, summary=None):
         self.payload = sample_payload() if payload is None else payload
+        self.summary = sample_summary() if summary is None else summary
         self.grounding = grounding
         self.finish_reason = finish_reason
         self.requests = []
@@ -59,6 +67,8 @@ class FakeClient:
         payload = self.payload
         if kwargs.get('response_format', {}).get('json_schema', {}).get('name') == 'visual_grounding':
             payload = self.grounding(kwargs) if callable(self.grounding) else (self.grounding or {'results': []})
+        if kwargs.get('response_format', {}).get('json_schema', {}).get('name') == 'meeting_summary':
+            payload = self.summary
         content = payload if isinstance(payload, str) else json.dumps(payload)
         message = SimpleNamespace(content=content, refusal=None)
         return SimpleNamespace(choices=[SimpleNamespace(message=message, finish_reason=self.finish_reason)], usage=None)

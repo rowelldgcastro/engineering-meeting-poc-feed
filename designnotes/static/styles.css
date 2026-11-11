@@ -64,3 +64,15 @@ label{display:block;margin:14px 0 6px;font-weight:600;font-size:14px}
 .visual figcaption{font-size:13px;color:#4a5763;margin-top:4px;display:flex;flex-direction:column;gap:2px;align-items:flex-start}
 .visual-meta{font:12px ui-monospace,Menlo,monospace;color:#5b6875}
 button.link{border:0;background:none;padding:0;color:#a12a2a;font-size:12px;text-decoration:underline}
+#viewTabs{margin:0 0 -1px}
+.concise h2{font-size:17px;margin:20px 0 6px}.concise h2:first-child{margin-top:0}
+.concise ul{margin:0;padding-left:22px}.concise ul ul{margin-top:2px}
+.bullet{margin:5px 0;line-height:1.5}.bullet::marker{color:#7a8794}
+.bullet.flagged>.bullet-row .bullet-text{background:#fff7e0}
+.bullet-row{display:flex;flex-wrap:wrap;gap:6px;align-items:baseline}
+.bullet-text{flex:0 1 auto}
+.ref.time{padding:1px 6px;font-size:11px}
+.bullet-tools{visibility:hidden;display:inline-flex;gap:4px}.bullet-tools button{padding:1px 7px;font-size:11px}
+.bullet-row:hover .bullet-tools,.bullet-row:focus-within .bullet-tools{visibility:visible}
+.bullet .visual{margin:6px 0 8px}
+.bullet.focus>.bullet-row{box-shadow:0 0 0 2px var(--accent);border-radius:4px}

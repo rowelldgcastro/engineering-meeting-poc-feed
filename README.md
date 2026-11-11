@@ -9,7 +9,7 @@ transcript) after the meeting.
 ```
 recording (.m4a/.mp4/...) ──ffmpeg──▶ 16 kHz mono chunks ──Whisper──▶ timestamped transcript segments (S001…)
 transcript (.txt/.md/.docx/.srt/.vtt or pasted) ──parser──────────────▶ transcript segments (S001…)
-segments ──GPT-4o (strict JSON schema)──▶ deterministic verification ──▶ notes A–G ──▶ review / edit / approve ──▶ Markdown / PDF
+segments ──GPT-4o (strict JSON schema)──▶ deterministic verification ──▶ notes A–G ──GPT-4o──▶ concise topic notes ──▶ review / edit / approve ──▶ Markdown / PDF
 video frames ──OpenCV──▶ screenshots + cursor track + pointing moments ──GPT-4.1 vision──▶ a screenshot per note item
 ```
 
@@ -62,9 +62,14 @@ location.
 3. Click **Generate Engineering Notes**. Recordings go through Converting → Transcribing → (video only:
    Finding screenshots and cursor movements) → Extracting → (video only: Matching screenshots).
    A 1-hour meeting typically takes a few minutes.
-4. Review the notes. Items marked **needs verification** failed an automatic check. Edit or delete any
-   item, click a source tag to read the excerpt, then **Approve**. Editing an approved note returns it to draft.
-5. Export **Markdown** or **PDF**. Both include the review status and a full transcript appendix.
+4. Review the notes. **Notes** shows concise, Granola-style topics: short bullets rewritten from the
+   verified items, each with a time chip that opens the supporting transcript and the screenshot of that
+   moment. **Detailed record** shows every verified item in sections A–G with its source quote. Items
+   marked **needs verification** failed an automatic check (a concise bullet is flagged if it states a
+   number its items don't support). Edit or delete any bullet or item, then **Approve**. Deleting an item
+   also removes it from the concise bullets built on it. Editing an approved note returns it to draft.
+5. Export **Markdown** or **PDF**. Both lead with the concise notes and screenshots, followed by the detailed
+   record, the review status and a transcript appendix.
 
 ## How accuracy is enforced
 

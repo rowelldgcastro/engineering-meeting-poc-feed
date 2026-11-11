@@ -230,7 +230,7 @@ def test_service_video_pipeline_exports_and_removal(video, tmp_path):
     assert extension == 'zip'
     archive = zipfile.ZipFile(io.BytesIO(data))
     markdown = archive.read('notes.md').decode()
-    assert '![D1 screenshot](images/D1.jpg)' in markdown and 'red ring' in markdown
+    assert '![screenshot](images/D1.jpg)' in markdown and 'red ring' in markdown
     assert archive.read('images/D1.jpg')[:2] == b'\xff\xd8'
     assert service.export_pdf(identifier)[:4] == b'%PDF'
     plain = render_markdown(service.snapshot(identifier))

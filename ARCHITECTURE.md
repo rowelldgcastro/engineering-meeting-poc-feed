@@ -73,7 +73,7 @@ be retried; the upload is kept.
 - Binds to `127.0.0.1` only. Every API call needs a per-launch bearer token, passed to the browser in the
   URL fragment. `Host`/`Origin` must be loopback, which blocks DNS rebinding and cross-site requests.
 - Strict CSP (no inline script). All rendering uses `textContent`, never `innerHTML`.
-- An API key entered in the UI is held in memory only. Data folders are created with `0700`.
+- The API key comes only from the environment or `.env`; the UI never sees it. Data folders are created with `0700`.
 - Upload names are sanitized, and IDs are validated as 32 hex characters before any filesystem access.
 
 ## Testing

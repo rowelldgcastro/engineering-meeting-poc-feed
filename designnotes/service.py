@@ -92,14 +92,10 @@ class NotesService:
         if self.client_factory:
             return self.client_factory()
         if not self.key:
-            raise ValueError('Enter your OpenAI API key first. It is kept in memory only.')
+            raise ValueError('The OpenAI API key is not configured. Add OPENAI_API_KEY=sk-... to the .env file '
+                             'in the app folder and restart the app.')
         from openai import OpenAI
         return OpenAI(api_key=self.key, timeout=600, max_retries=2)
-
-    def set_key(self, value):
-        if not isinstance(value, str) or not value.strip() or len(value) > 1000:
-            raise ValueError('Invalid API key.')
-        self.key = value.strip()
 
     def status(self):
         return {'api_key_set': bool(self.key or self.client_factory), 'ffmpeg': bool(media.ffmpeg_path()),

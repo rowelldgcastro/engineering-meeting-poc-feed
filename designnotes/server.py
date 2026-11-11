@@ -132,10 +132,7 @@ def handler_factory(service, token, allowed_hosts=None):
                     self.respond(202, {'id': identifier})
                     return
                 body = self.read_json()
-                if path == '/api/key':
-                    service.set_key(body.get('key'))
-                    self.respond(200, {'ok': True})
-                elif path == '/api/paste':
+                if path == '/api/paste':
                     identifier = service.create_from_text(body.get('text'), body.get('title'), body.get('project'))
                     self.respond(202, {'id': identifier})
                 elif path == '/api/quit':

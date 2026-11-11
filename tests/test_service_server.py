@@ -104,7 +104,7 @@ def test_key_required_without_client(tmp_path, monkeypatch):
 
 def test_http_auth_host_and_assets(server):
     response, body = request(server, 'GET', '/', token=None, raw=True)
-    assert response.status == 200 and b'Engineering' in body
+    assert response.status == 200 and b'DesignNotes' in body
     assert "default-src 'self'" in response.getheader('Content-Security-Policy')
     assert request(server, 'GET', '/api/notes', token=None)[0] == 401
     assert request(server, 'GET', '/api/notes', token='wrong')[0] == 401

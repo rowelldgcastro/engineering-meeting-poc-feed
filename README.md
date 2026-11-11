@@ -32,7 +32,7 @@ or with low confidence are discarded. You can remove any screenshot. Markdown ex
 
 - Python 3.10+
 - `ffmpeg` (for recordings only). macOS: `brew install ffmpeg`. Ubuntu: `sudo apt install ffmpeg`.
-- An OpenAI API key. It's used for Whisper transcription, GPT-4o extraction and GPT-4.1 vision matching.
+- An OpenAI API key in a `.env` file in the app folder (`OPENAI_API_KEY=sk-...`). It is read at startup and used for Whisper transcription, GPT-4o extraction and GPT-4.1 vision matching; the UI has no key field.
 
 ## Run
 

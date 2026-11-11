@@ -38,36 +38,40 @@ function action(id, callback) {
 // ---------------------------------------------------------------- status, list
 async function refreshStatus() {
   status = await api('/api/status');
-  $('keyState').textContent = status.api_key_set ? 'OpenAI key configured' : 'OpenAI key required';
-  $('keyBox').classList.toggle('hidden', status.api_key_set);
+  $('setupState').textContent = 'OpenAI key missing: add OPENAI_API_KEY to .env and restart';
+  $('setupState').classList.toggle('hidden', status.api_key_set);
   $('ffmpegWarning').classList.toggle('hidden', status.ffmpeg);
-  $('formats').textContent = 'Recordings: ' + status.media_extensions.join(' ') + '  ·  Transcripts: ' + status.transcript_extensions.join(' ');
+  $('formats').textContent = 'MP4, MOV, MP3, M4A, WAV and more · transcripts as TXT, DOCX, SRT or VTT';
 }
 async function refreshList() {
   const items = await api('/api/notes');
   $('notesList').replaceChildren(...items.map(item => {
     const button = node('button', item.title, item.id === selected ? 'selected' : '');
-    const label = item.state === 'ready' ? (item.approved ? 'approved' : 'draft') : item.state;
-    button.append(node('span', (item.source_kind === 'recording' ? 'recording' : 'transcript') + ' · ' + label + ' · ' +
-      new Date(item.created_at * 1000).toLocaleString(), 'state'));
+    const label = item.state === 'ready' ? (item.approved ? 'Approved' : 'Draft') : item.state === 'failed' ? 'Failed' : 'Processing';
+    const state = node('span', undefined, 'state');
+    state.append(node('span', undefined, 'dot ' + (item.state === 'ready' ? 'ready' : item.state === 'failed' ? 'failed' : 'busy')),
+      node('span', label + ' · ' + new Date(item.created_at * 1000).toLocaleDateString(undefined, {month: 'short', day: 'numeric'})));
+    button.append(state);
     button.addEventListener('click', () => openNotes(item.id).catch(showError));
     return button;
   }));
-  if (!items.length) $('notesList').append(node('p', 'No notes yet.', 'muted small'));
+  if (!items.length) $('notesList').append(node('p', 'No meetings yet.', 'muted small side-empty'));
 }
 
 // ---------------------------------------------------------------- input view
 function setMode(next) {
   mode = next;
-  $('tabUpload').classList.toggle('active', mode === 'upload'); $('tabUpload').setAttribute('aria-selected', mode === 'upload');
-  $('tabPaste').classList.toggle('active', mode === 'paste'); $('tabPaste').setAttribute('aria-selected', mode === 'paste');
+  $('modeToggle').textContent = mode === 'upload' ? 'Paste a transcript instead' : 'Upload a file instead';
   $('uploadPane').classList.toggle('hidden', mode !== 'upload');
   $('pastePane').classList.toggle('hidden', mode !== 'paste');
   $('glossaryBox').classList.toggle('hidden', mode !== 'upload');
 }
 function setFile(chosen) {
   file = chosen || null;
-  $('fileName').textContent = file ? file.name + ' (' + (file.size / 1048576).toFixed(1) + ' MB)' : '';
+  $('fileName').textContent = file ? file.name : '';
+  $('fileSize').textContent = file ? (file.size / 1048576).toFixed(1) + ' MB' : '';
+  $('fileChip').classList.toggle('hidden', !file);
+  $('dropZone').classList.toggle('hidden', !!file);
 }
 function showInput() {
   selected = null; record = null; lastSignature = '';
@@ -90,7 +94,7 @@ async function generate() {
         'X-Project': encodeURIComponent($('project').value), 'X-Glossary': encodeURIComponent($('glossary').value)}});
       result = await response.json();
       if (!response.ok) throw new Error(result.error || 'Upload failed.');
-    } finally { $('generate').textContent = 'Generate Engineering Notes'; }
+    } finally { $('generate').textContent = 'Generate notes'; }
   }
   $('pasteText').value = ''; $('title').value = ''; $('project').value = ''; $('glossary').value = ''; setFile(null); $('file').value = '';
   await openNotes(result.id);
@@ -118,16 +122,22 @@ function renderRecord() {
   if (r.transcript) meta.push(r.transcript.segments.length + ' transcript segments');
   if (r.visual_status && r.visual_status.message && ready) meta.push(r.visual_status.message);
   $('notesMeta').textContent = meta.join('  ·  ');
-  $('progress').textContent = r.state === 'failed' ? 'Failed: ' + (r.error || '') : (r.progress || r.state) + '…';
-  $('progress').className = (r.state === 'failed' ? 'warning' : 'progress') + (ready ? ' hidden' : '');
+  const failed = r.state === 'failed', approvedAt = ready && r.review.approved_at;
+  $('notesStatus').textContent = failed ? 'Failed' : !ready ? 'Processing' : approvedAt ? 'Approved' : 'Draft';
+  $('notesStatus').className = 'status-pill ' + (failed ? 'failed' : !ready ? 'busy' : approvedAt ? 'ready' : '');
+  $('progressCard').classList.toggle('hidden', ready);
+  $('progressCard').classList.toggle('failed', failed);
+  $('progress').textContent = failed ? 'Processing failed' : (r.progress || 'Working') + '…';
+  renderSteps(r);
+  if (failed) $('steps').replaceChildren(node('li', r.error || 'Unknown error.'));
   for (const id of ['approve', 'exportMd', 'exportPdf', 'editTitle']) $(id).classList.toggle('hidden', !ready);
   $('retry').classList.toggle('hidden', !(r.state === 'failed' || (ready && r.visual_status?.state === 'failed')));
   const approved = ready && r.review.approved_at;
-  $('approve').textContent = approved ? 'Withdraw approval' : 'Approve notes';
+  $('approve').textContent = approved ? 'Withdraw approval' : 'Approve';
   $('reviewState').replaceChildren();
   if (ready) {
     $('reviewState').append(node('p', approved ? 'Approved by reviewer on ' + new Date(r.review.approved_at * 1000).toLocaleString() + '.'
-      : 'Draft: review each item, edit or delete as needed, then approve. Editing after approval returns the notes to draft.',
+      : 'Draft: hover a bullet to edit or delete it, then approve. Editing after approval returns the notes to draft.',
       approved ? 'approved' : 'draft'));
   }
   const warnings = [...(r.transcript?.warnings || [])];
@@ -150,6 +160,18 @@ function renderRecord() {
     renderTranscript();
   }
 }
+const VIDEO = /\.(mp4|mov|webm|mkv|mpeg)$/i;
+function renderSteps(r) {
+  const video = r.source.kind === 'recording' && VIDEO.test(r.source.filename || '');
+  const steps = [['queued', 'Upload received']];
+  if (r.source.kind === 'recording') steps.push(['transcribing', 'Transcribing the recording']);
+  if (video) steps.push(['analyzing', 'Finding screenshots and cursor movements']);
+  steps.push(['extracting', 'Extracting the engineering points']);
+  if (video) steps.push(['matching', 'Matching screenshots to notes']);
+  steps.push(['summarizing', 'Writing concise notes']);
+  const current = steps.findIndex(([state]) => state === r.state);
+  $('steps').replaceChildren(...steps.map(([, label], i) => node('li', label, i < current ? 'done' : i === current ? 'current' : '')));
+}
 function countFlagged() {
   return Object.values(record.notes.sections).flat().filter(item => (item.flags || []).some(f => f.level === 'warning')).length;
 }
@@ -163,7 +185,8 @@ function renderNotes() {
   const container = $('notes');
   container.replaceChildren();
   if (record.state !== 'ready') {
-    container.append(node('div', record.state === 'failed' ? 'No notes were generated.' : 'Notes will appear here when processing finishes.', 'card muted'));
+    if (record.state === 'failed') container.append(node('div', 'No notes were generated. Retry, or start a new meeting.', 'card muted'));
+    $('viewTabs').classList.add('hidden');
     return;
   }
   const concise = record.notes.summary;
@@ -431,8 +454,16 @@ async function download(kind) {
 }
 
 // ---------------------------------------------------------------- wiring
-$('tabUpload').addEventListener('click', () => setMode('upload'));
-$('tabPaste').addEventListener('click', () => setMode('paste'));
+$('modeToggle').addEventListener('click', () => setMode(mode === 'upload' ? 'paste' : 'upload'));
+$('clearFile').addEventListener('click', () => { setFile(null); $('file').value = ''; });
+const closeMenu = () => { $('moreMenu').classList.add('hidden'); $('moreButton').setAttribute('aria-expanded', 'false'); };
+$('moreButton').addEventListener('click', event => {
+  event.stopPropagation();
+  const open = $('moreMenu').classList.toggle('hidden') === false;
+  $('moreButton').setAttribute('aria-expanded', String(open));
+});
+document.addEventListener('click', closeMenu);
+document.addEventListener('keydown', event => { if (event.key === 'Escape') closeMenu(); });
 $('viewSummary').addEventListener('click', () => setView('summary'));
 $('viewDetailed').addEventListener('click', () => setView('detailed'));
 $('file').addEventListener('change', () => setFile($('file').files[0]));
@@ -441,7 +472,6 @@ const drop = $('dropZone');
 ['dragleave', 'drop'].forEach(type => drop.addEventListener(type, event => { event.preventDefault(); drop.classList.remove('over'); }));
 drop.addEventListener('drop', event => setFile(event.dataTransfer.files[0]));
 $('newNotes').addEventListener('click', showInput);
-action('saveKey', async () => { await api('/api/key', {key: $('apiKey').value}); $('apiKey').value = ''; await refreshStatus(); });
 action('generate', generate);
 action('approve', async () => {
   record = await api('/api/notes/' + selected + '/approve', {approved: !record.review.approved_at}); renderRecord(); await refreshList();

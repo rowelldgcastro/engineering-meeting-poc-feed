@@ -37,10 +37,11 @@ def test_summary_drops_unsupported_bullets_and_flags_new_values():
     notes, segments = notes_and_segments()
     payload = sample_summary()
     payload['topics'][0]['bullets'] += [{'text': 'Invented point', 'item_ids': ['X9'], 'sub_bullets': []},
-                                        {'text': 'Bracket thickness 4.5 mm', 'item_ids': ['D1'], 'sub_bullets': []}]
+                                        {'text': 'Bracket thickness 4.5 mm', 'item_ids': ['D1', 'C1'], 'sub_bullets': []},
+                                        {'text': 'Repeats the decision', 'item_ids': ['D1'], 'sub_bullets': []}]
     concise = build_summary(payload, notes, segments)
     texts = [b['text'] for b in concise['topics'][0]['bullets']]
-    assert 'Invented point' not in texts
+    assert 'Invented point' not in texts and 'Repeats the decision' not in texts
     flagged = next(b for b in concise['topics'][0]['bullets'] if b['text'].startswith('Bracket thickness'))
     assert flagged['flags'][0]['code'] == 'unsupported_value' and '4.5' in flagged['flags'][0]['message']
 

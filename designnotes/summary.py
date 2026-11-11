@@ -61,6 +61,7 @@ Rules:
   substance; no filler such as "The meeting discusses", "The design includes", "It was mentioned that".
 - Merge items that repeat each other or belong together into one bullet. Put supporting detail (reasons,
   values, lists of parts shown) in up to 3 short sub-bullets instead of long sentences.
+- Cite each item in one bullet only; say each point once, in the topic where it was discussed.
 - Sub-bullets must add information (a reason, value, part list); never restate the parent bullet.
 - Make decisions unmistakable, e.g. "Decided: L reduced from 100 mm to 75 mm". Current values belong with
   the decision that changes them.
@@ -135,7 +136,7 @@ def build_summary(payload, notes, segments):
         ids = [i for i in dict.fromkeys(raw.get('item_ids') or []) if i in items]
         number = next(counter)
         kids = [k for k in (make(c, False) for c in (raw.get('sub_bullets') or [])[:MAX_CHILDREN]) if k] if children else []
-        if not ids and not kids:
+        if not kids and (not ids or set(ids) <= used):
             return None
         used.update(ids)
         bullet = {'id': f'N{number}', 'text': raw['text'].strip()[:extraction.MAX_TEXT], 'item_ids': ids,
@@ -151,6 +152,7 @@ def build_summary(payload, notes, segments):
         if bullets:
             topics.append({'title': raw['title'].strip()[:200] or 'Discussion', 'bullets': bullets})
     next_steps = [b for b in (make(r, False) for r in (payload.get('next_steps') or [])[:MAX_BULLETS]) if b]
+    topics.sort(key=lambda t: min(_position(b['source_ids'], order) for b in t['bullets']))
     for item_id, (section, item) in items.items():
         if item_id not in used:
             _place(make({'text': item['text'], 'item_ids': [item_id]}), topics, order)
